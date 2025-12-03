@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import WhatsAppCampaign from './WhatsAppCampaign';
+import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 
-export default function ProtectedWhatsAppCampaign() {
+interface ProtectedWhatsAppCampaignProps {
+  prefill?: WhatsAppPrefillPayload | null;
+  onPrefillConsumed?: () => void;
+}
+
+export default function ProtectedWhatsAppCampaign({ prefill, onPrefillConsumed }: ProtectedWhatsAppCampaignProps = {}) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -30,7 +36,7 @@ export default function ProtectedWhatsAppCampaign() {
   };
 
   if (isAuthenticated) {
-    return <WhatsAppCampaign />;
+    return <WhatsAppCampaign prefill={prefill} onPrefillConsumed={onPrefillConsumed} />;
   }
 
   return (

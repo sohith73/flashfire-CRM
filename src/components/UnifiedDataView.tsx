@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Edit,
   Plus,
+  MessageCircle,
 } from 'lucide-react';
 import {
   format,
@@ -101,8 +102,11 @@ interface UnifiedRow {
   workAuthorization?: string;
 }
 
+import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
+
 interface UnifiedDataViewProps {
   onOpenEmailCampaign: (payload: EmailPrefillPayload) => void;
+  onOpenWhatsAppCampaign?: (payload: WhatsAppPrefillPayload) => void;
 }
 
 const statusLabels: Record<BookingStatus, string> = {
@@ -170,7 +174,7 @@ interface CampaignDetails {
   bookedAfterEmail: boolean;
 }
 
-export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataViewProps) {
+export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCampaign }: UnifiedDataViewProps) {
   const [bookings, setBookings] = useState<Booking[]>(() => {
     // Initialize from cache if available
     const cached = getCachedBookings<Booking>();
@@ -504,6 +508,35 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
     });
   }, [selectedRows, filteredData, onOpenEmailCampaign]);
 
+  const handleBulkWhatsApp = useCallback(() => {
+    if (!onOpenWhatsAppCampaign) {
+      alert('WhatsApp campaign feature is not available');
+      return;
+    }
+
+    const selectedPhones = filteredData
+      .filter((row) => selectedRows.has(row.id))
+      .map((row) => {
+        // Extract phone number, handling country code if present
+        if (row.phone && row.phone !== 'Not Specified') {
+          // Remove any non-digit characters except +
+          return row.phone.replace(/[^\d+]/g, '');
+        }
+        return null;
+      })
+      .filter((phone): phone is string => phone !== null && phone.length > 0);
+
+    if (selectedPhones.length === 0) {
+      alert('Please select at least one row with a valid phone number to send WhatsApp messages');
+      return;
+    }
+
+    onOpenWhatsAppCampaign({
+      mobileNumbers: selectedPhones,
+      reason: 'bulk_action',
+    });
+  }, [selectedRows, filteredData, onOpenWhatsAppCampaign]);
+
   const handleUserCampaignsClick = useCallback(async (userEmail: string) => {
     setSelectedUserEmail(userEmail);
     setLoadingUserCampaigns(true);
@@ -816,6 +849,35 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
               </div>
             </button>
             {filteredUsersWithoutBookings.length > 0 && (
+              <div className="flex items-center gap-2">
+                {onOpenWhatsAppCampaign && (
+                  <button
+                    onClick={() => {
+                      const phones = filteredUsersWithoutBookings
+                        .map((row) => {
+                          if (row.phone && row.phone !== 'Not Specified') {
+                            return row.phone.replace(/[^\d+]/g, '');
+                          }
+                          return null;
+                        })
+                        .filter((phone): phone is string => phone !== null && phone.length > 0);
+                      
+                      if (phones.length === 0) {
+                        alert('No valid phone numbers found in selected users');
+                        return;
+                      }
+                      
+                      onOpenWhatsAppCampaign({
+                        mobileNumbers: phones,
+                        reason: 'users_without_meetings_bulk',
+                      });
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold"
+                  >
+                    <MessageCircle size={16} />
+                    WhatsApp All ({filteredUsersWithoutBookings.length})
+                  </button>
+                )}
               <button
                 onClick={() => {
                   const emails = filteredUsersWithoutBookings.map((row) => row.email).filter(Boolean);
@@ -829,6 +891,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
                 <Send size={16} />
                 Email All ({filteredUsersWithoutBookings.length})
               </button>
+              </div>
             )}
           </div>
         </div>
@@ -964,6 +1027,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
                                 })()}
                               </td>
                               <td className="px-4 py-4">
+                                <div className="flex flex-col gap-1.5">
                                 <button
                                   onClick={() => {
                                     onOpenEmailCampaign({
@@ -971,11 +1035,31 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
                                       reason: 'user_without_booking',
                                     });
                                   }}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-500 text-white hover:bg-purple-600 transition"
+                                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-500 text-white hover:bg-purple-600 transition w-full justify-center"
                                 >
                                   <Mail size={14} />
-                                  Reach Out
+                                    Email
                                 </button>
+                                  {onOpenWhatsAppCampaign && row.phone && row.phone !== 'Not Specified' && (
+                                    <button
+                                      onClick={() => {
+                                        const phone = row.phone!.replace(/[^\d+]/g, '');
+                                        if (phone) {
+                                          onOpenWhatsAppCampaign({
+                                            mobileNumbers: [phone],
+                                            reason: 'user_without_booking',
+                                          });
+                                        } else {
+                                          alert('Invalid phone number');
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500 text-white hover:bg-green-600 transition w-full justify-center"
+                                    >
+                                      <MessageCircle size={14} />
+                                      WhatsApp
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -995,13 +1079,24 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
           <span className="text-sm font-semibold text-orange-900">
             {selectedRows.size} row{selectedRows.size > 1 ? 's' : ''} selected
           </span>
+          <div className="flex items-center gap-2">
+            {onOpenWhatsAppCampaign && (
+              <button
+                onClick={handleBulkWhatsApp}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold"
+              >
+                <MessageCircle size={16} />
+                Send WhatsApp ({selectedRows.size})
+              </button>
+            )}
           <button
             onClick={handleBulkEmail}
             className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold"
           >
             <Send size={16} />
-            Send Email Campaign ({selectedRows.size})
+              Send Email ({selectedRows.size})
           </button>
+          </div>
         </div>
       )}
 
@@ -1402,6 +1497,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
                               </div>
                             </div>
                         ) : (
+                          <div className="flex flex-col gap-1.5">
                           <button
                             onClick={() => {
                               onOpenEmailCampaign({
@@ -1409,11 +1505,31 @@ export default function UnifiedDataView({ onOpenEmailCampaign }: UnifiedDataView
                                 reason: 'user_without_booking',
                               });
                             }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition w-full justify-center"
                           >
                             <Mail size={12} />
-                            Reach Out
+                              Email
+                            </button>
+                            {onOpenWhatsAppCampaign && row.phone && row.phone !== 'Not Specified' && (
+                              <button
+                                onClick={() => {
+                                  const phone = row.phone!.replace(/[^\d+]/g, '');
+                                  if (phone) {
+                                    onOpenWhatsAppCampaign({
+                                      mobileNumbers: [phone],
+                                      reason: 'user_without_booking',
+                                    });
+                                  } else {
+                                    alert('Invalid phone number');
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-green-500 text-white hover:bg-green-600 transition w-full justify-center"
+                              >
+                                <MessageCircle size={12} />
+                                WhatsApp
                           </button>
+                            )}
+                          </div>
                         )}
                         </div>
                         {row.notes && (
