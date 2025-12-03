@@ -878,19 +878,19 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                     WhatsApp All ({filteredUsersWithoutBookings.length})
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    const emails = filteredUsersWithoutBookings.map((row) => row.email).filter(Boolean);
-                    onOpenEmailCampaign({
-                      recipients: emails,
-                      reason: 'users_without_meetings_bulk',
-                    });
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition text-sm font-semibold"
-                >
-                  <Send size={16} />
-                  Email All ({filteredUsersWithoutBookings.length})
-                </button>
+              <button
+                onClick={() => {
+                  const emails = filteredUsersWithoutBookings.map((row) => row.email).filter(Boolean);
+                  onOpenEmailCampaign({
+                    recipients: emails,
+                    reason: 'users_without_meetings_bulk',
+                  });
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition text-sm font-semibold"
+              >
+                <Send size={16} />
+                Email All ({filteredUsersWithoutBookings.length})
+              </button>
               </div>
             )}
           </div>
@@ -1028,18 +1028,18 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                               </td>
                               <td className="px-4 py-4">
                                 <div className="flex flex-col gap-1.5">
-                                  <button
-                                    onClick={() => {
-                                      onOpenEmailCampaign({
-                                        recipients: [row.email],
-                                        reason: 'user_without_booking',
-                                      });
-                                    }}
+                                <button
+                                  onClick={() => {
+                                    onOpenEmailCampaign({
+                                      recipients: [row.email],
+                                      reason: 'user_without_booking',
+                                    });
+                                  }}
                                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-500 text-white hover:bg-purple-600 transition w-full justify-center"
-                                  >
-                                    <Mail size={14} />
+                                >
+                                  <Mail size={14} />
                                     Email
-                                  </button>
+                                </button>
                                   {onOpenWhatsAppCampaign && row.phone && row.phone !== 'Not Specified' && (
                                     <button
                                       onClick={() => {
@@ -1089,13 +1089,13 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                 Send WhatsApp ({selectedRows.size})
               </button>
             )}
-            <button
-              onClick={handleBulkEmail}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold"
-            >
-              <Send size={16} />
+          <button
+            onClick={handleBulkEmail}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold"
+          >
+            <Send size={16} />
               Send Email ({selectedRows.size})
-            </button>
+          </button>
           </div>
         </div>
       )}
@@ -1498,16 +1498,16 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                             </div>
                         ) : (
                           <div className="flex flex-col gap-1.5">
-                            <button
-                              onClick={() => {
-                                onOpenEmailCampaign({
-                                  recipients: [row.email],
-                                  reason: 'user_without_booking',
-                                });
-                              }}
+                          <button
+                            onClick={() => {
+                              onOpenEmailCampaign({
+                                recipients: [row.email],
+                                reason: 'user_without_booking',
+                              });
+                            }}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition w-full justify-center"
-                            >
-                              <Mail size={12} />
+                          >
+                            <Mail size={12} />
                               Email
                             </button>
                             {onOpenWhatsAppCampaign && row.phone && row.phone !== 'Not Specified' && (
@@ -1527,7 +1527,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                               >
                                 <MessageCircle size={12} />
                                 WhatsApp
-                              </button>
+                          </button>
                             )}
                           </div>
                         )}
