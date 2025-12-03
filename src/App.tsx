@@ -7,6 +7,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import UnifiedDataView from './components/UnifiedDataView';
 import { LayoutDashboard, Mail, MessageCircle, BarChart3, Megaphone, BarChart4, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { EmailPrefillPayload } from './types/emailPrefill';
+import type { WhatsAppPrefillPayload } from './types/whatsappPrefill';
 
 type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data';
 
@@ -21,11 +22,17 @@ const navItems: Array<{ icon: ComponentType<{ size?: number }>; label: string; t
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('campaigns');
   const [emailPrefill, setEmailPrefill] = useState<EmailPrefillPayload | null>(null);
+  const [whatsappPrefill, setWhatsappPrefill] = useState<WhatsAppPrefillPayload | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleOpenEmailCampaign = (payload: EmailPrefillPayload) => {
     setEmailPrefill(payload);
     setActiveTab('emails');
+  };
+
+  const handleOpenWhatsAppCampaign = (payload: WhatsAppPrefillPayload) => {
+    setWhatsappPrefill(payload);
+    setActiveTab('whatsapp');
   };
 
   return (
@@ -159,9 +166,19 @@ function App() {
                 onPrefillConsumed={() => setEmailPrefill(null)}
               />
             )}
-            {activeTab === 'whatsapp' && <ProtectedWhatsAppCampaign />}
+            {activeTab === 'whatsapp' && (
+              <ProtectedWhatsAppCampaign
+                prefill={whatsappPrefill}
+                onPrefillConsumed={() => setWhatsappPrefill(null)}
+              />
+            )}
             {activeTab === 'analytics' && <AnalyticsDashboard onOpenEmailCampaign={handleOpenEmailCampaign} />}
-            {activeTab === 'data' && <UnifiedDataView onOpenEmailCampaign={handleOpenEmailCampaign} />}
+            {activeTab === 'data' && (
+              <UnifiedDataView
+                onOpenEmailCampaign={handleOpenEmailCampaign}
+                onOpenWhatsAppCampaign={handleOpenWhatsAppCampaign}
+              />
+            )}
           </div>
         </section>
       </main>

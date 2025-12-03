@@ -12,8 +12,14 @@ import {
   Smartphone,
   Play,
 } from 'lucide-react';
+import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
+
+interface WhatsAppCampaignProps {
+  prefill?: WhatsAppPrefillPayload | null;
+  onPrefillConsumed?: () => void;
+}
 
 interface WatiTemplate {
   name: string;
@@ -60,7 +66,7 @@ interface ScheduledWhatsAppCampaign extends WhatsAppCampaign {
   }>;
 }
 
-export default function WhatsAppCampaign() {
+export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAppCampaignProps = {}) {
   const [templateName, setTemplateName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [mobileNumbers, setMobileNumbers] = useState('');
@@ -83,6 +89,28 @@ export default function WhatsAppCampaign() {
   const [selectedBookingStatus, setSelectedBookingStatus] = useState<string>('scheduled');
   const [fetchingMobiles, setFetchingMobiles] = useState(false);
   const [sendingCampaign, setSendingCampaign] = useState<string | null>(null);
+
+  // Handle prefill
+  useEffect(() => {
+    if (prefill) {
+      if (prefill.mobileNumbers && prefill.mobileNumbers.length > 0) {
+        setMobileNumbers(prefill.mobileNumbers.join(', '));
+      }
+      if (prefill.templateId) {
+        setTemplateId(prefill.templateId);
+        // Find template name from templates list
+        const template = templates.find(t => t.id === prefill.templateId);
+        if (template) {
+          setTemplateName(template.name);
+        }
+      }
+      setActiveTab('create');
+      // Consume prefill after applying it
+      if (onPrefillConsumed) {
+        onPrefillConsumed();
+      }
+    }
+  }, [prefill, templates, onPrefillConsumed]);
 
   useEffect(() => {
     fetchTemplates();
