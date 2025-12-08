@@ -29,7 +29,7 @@ export default function ProtectedAnalyticsDashboard({ onOpenEmailCampaign }: Pro
   };
 
   if (isAuthenticated) {
-    return <AnalyticsDashboard onOpenEmailCampaign={onOpenEmailCampaign} />;
+    return <AnalyticsDashboard onOpenEmailCampaign={onOpenEmailCampaign || (() => {})} />;
   }
 
   return (

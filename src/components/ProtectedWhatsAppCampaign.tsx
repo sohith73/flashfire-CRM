@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Lock } from 'lucide-react';
 import WhatsAppCampaign from './WhatsAppCampaign';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';

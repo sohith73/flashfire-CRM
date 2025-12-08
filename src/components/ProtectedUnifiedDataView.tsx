@@ -33,7 +33,7 @@ export default function ProtectedUnifiedDataView({ onOpenEmailCampaign, onOpenWh
   if (isAuthenticated) {
     return (
       <UnifiedDataView
-        onOpenEmailCampaign={onOpenEmailCampaign}
+        onOpenEmailCampaign={onOpenEmailCampaign || (() => {})}
         onOpenWhatsAppCampaign={onOpenWhatsAppCampaign}
       />
     );
