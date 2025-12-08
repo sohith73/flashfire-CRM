@@ -23,6 +23,7 @@ import {
   Loader,
   Type,
   List,
+  Send,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -50,6 +51,7 @@ interface WorkflowStep {
   templateId: string;
   templateName?: string;
   domainName?: string;
+  senderEmail?: string;
   order: number;
 }
 
@@ -86,6 +88,8 @@ interface WorkflowLog {
     daysAfter: number;
     templateId: string;
     templateName?: string;
+    domainName?: string;
+    senderEmail?: string;
     order: number;
   };
   status: 'scheduled' | 'executed' | 'failed';
@@ -128,6 +132,7 @@ export default function Workflows() {
   const [logPage, setLogPage] = useState(1);
   const [totalLogPages, setTotalLogPages] = useState(1);
   const [totalLogs, setTotalLogs] = useState(0);
+  const [sendingLogId, setSendingLogId] = useState<string | null>(null);
   const [logStats, setLogStats] = useState({
     total: 0,
     scheduled: 0,
@@ -789,19 +794,36 @@ export default function Workflows() {
                         </div>
                       </div>
                       {step.channel === 'email' && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">
-                            Domain Name
-                          </label>
-                          <input
-                            type="text"
-                            value={step.domainName || ''}
-                            onChange={(e) =>
-                              updateStep(null, index, 'domainName', e.target.value)
-                            }
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-slate-700 text-sm"
-                            placeholder="e.g., example.com (optional)"
-                          />
+                        <div className="mt-2 space-y-2">
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 mb-1">
+                              Domain Name
+                            </label>
+                            <input
+                              type="text"
+                              value={step.domainName || ''}
+                              onChange={(e) =>
+                                updateStep(null, index, 'domainName', e.target.value)
+                              }
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-slate-700 text-sm"
+                              placeholder="e.g., example.com (optional)"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-slate-600 mb-1">
+                              Sender Email
+                              <span className="text-slate-400 text-xs ml-1">(optional - defaults to elizabeth@flashfirehq.com or elizabeth@domain)</span>
+                            </label>
+                            <input
+                              type="email"
+                              value={step.senderEmail || ''}
+                              onChange={(e) =>
+                                updateStep(null, index, 'senderEmail', e.target.value)
+                              }
+                              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-slate-700 text-sm"
+                              placeholder="e.g., elizabeth@example.com (optional)"
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1082,7 +1104,7 @@ export default function Workflows() {
                               </div>
                             </div>
                             {step.channel === 'email' && (
-                              <div className="mt-2">
+                              <div className="mt-2 space-y-2">
                                 <input
                                   type="text"
                                   value={step.domainName || ''}
@@ -1091,6 +1113,15 @@ export default function Workflows() {
                                   }
                                   className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
                                   placeholder="Domain name (e.g., example.com)"
+                                />
+                                <input
+                                  type="email"
+                                  value={step.senderEmail || ''}
+                                  onChange={(e) =>
+                                    updateStep(workflow.workflowId, index, 'senderEmail', e.target.value)
+                                  }
+                                  className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm"
+                                  placeholder="Sender email (optional)"
                                 />
                               </div>
                             )}
@@ -1252,6 +1283,7 @@ export default function Workflows() {
                             <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Scheduled For</th>
                             <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Executed At</th>
                             <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Workflow</th>
+                            <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1332,6 +1364,62 @@ export default function Workflows() {
                                     {log.workflowId.slice(0, 8)}...
                                   </p>
                                 </div>
+                              </td>
+                              <td className="py-4 px-4">
+                                {log.step.channel === 'email' && log.status !== 'executed' && (
+                                  <button
+                                    onClick={async () => {
+                                      if (sendingLogId === log.logId) return;
+                                      
+                                      try {
+                                        setSendingLogId(log.logId);
+                                        const response = await fetch(
+                                          `${API_BASE_URL}/api/workflow-logs/${log.logId}/send-now`,
+                                          {
+                                            method: 'POST',
+                                            headers: {
+                                              'Content-Type': 'application/json',
+                                            },
+                                          }
+                                        );
+
+                                        const data = await response.json();
+
+                                        if (data.success) {
+                                          showToast('Email sent successfully!', 'success');
+                                          // Refresh logs
+                                          fetchLogs();
+                                          fetchLogStats();
+                                        } else {
+                                          showToast(data.message || 'Failed to send email', 'error');
+                                        }
+                                      } catch (error) {
+                                        console.error('Error sending email:', error);
+                                        showToast('Failed to send email', 'error');
+                                      } finally {
+                                        setSendingLogId(null);
+                                      }
+                                    }}
+                                    disabled={sendingLogId === log.logId}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Send email now"
+                                  >
+                                    {sendingLogId === log.logId ? (
+                                      <>
+                                        <Loader2 className="animate-spin" size={14} />
+                                        <span>Sending...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send size={14} />
+                                        <span>Send Now</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                                {log.status === 'executed' && (
+                                  <span className="text-xs text-green-600 font-medium">Sent</span>
+                                )}
                               </td>
                             </tr>
                           ))}
