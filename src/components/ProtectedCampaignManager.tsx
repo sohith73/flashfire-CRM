@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { Lock } from 'lucide-react';
 import CampaignManager from './CampaignManager';
-
-const CORRECT_PASSWORD = 'flashfire@2025';
-const PASSWORD_KEY = 'campaign_access_token';
+import { checkAuth, authenticate } from '../utils/auth';
 
 export default function ProtectedCampaignManager() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return sessionStorage.getItem(PASSWORD_KEY) === 'true';
+    return checkAuth();
   });
 
   const [password, setPassword] = useState('');
@@ -16,8 +14,7 @@ export default function ProtectedCampaignManager() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password === CORRECT_PASSWORD) {
-      sessionStorage.setItem(PASSWORD_KEY, 'true');
+    if (authenticate(password)) {
       setIsAuthenticated(true);
       setError('');
     } else {

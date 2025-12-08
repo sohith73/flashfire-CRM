@@ -13,6 +13,9 @@ import {
   ArrowDownRight,
   ExternalLink,
   Edit,
+  X,
+  Info,
+  AlertCircle,
 } from 'lucide-react';
 import NotesModal from './NotesModal';
 import {
@@ -404,6 +407,16 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
     return Array.from(sources).sort();
   }, [bookings]);
 
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Date.now().toString();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus) => {
     try {
       setUpdatingBookingId(bookingId);
@@ -423,10 +436,14 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
         setCachedBookings(updated);
         return updated;
       });
-      // Removed automatic email opening when marking as no-show
+      
+      // Show toast notification if workflow was triggered
+      if (data.workflowTriggered) {
+        showToast(`Workflow triggered for ${status} action`, 'success');
+      }
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Failed to update booking status');
+      showToast(err instanceof Error ? err.message : 'Failed to update booking status', 'error');
     } finally {
       setUpdatingBookingId(null);
     }
@@ -604,6 +621,33 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
   ];
 
   return (
+    <>
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-white min-w-[300px] animate-in slide-in-from-right ${
+              toast.type === 'success'
+                ? 'bg-green-500'
+                : toast.type === 'error'
+                ? 'bg-red-500'
+                : 'bg-blue-500'
+            }`}
+          >
+            {toast.type === 'success' && <CheckCircle2 size={20} />}
+            {toast.type === 'error' && <AlertCircle size={20} />}
+            {toast.type === 'info' && <Info size={20} />}
+            <span className="flex-1 font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              className="hover:opacity-80"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-10 space-y-10">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
@@ -1125,6 +1169,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
         />
       )}
     </div>
+    </>
   );
 }
 

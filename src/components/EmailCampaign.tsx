@@ -12,6 +12,7 @@ import {
   Clock,
   Pause,
   Play,
+  Save,
 } from 'lucide-react';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 
@@ -87,6 +88,7 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
   const [activeTab, setActiveTab] = useState<'create' | 'scheduled' | 'history'>('create');
   const [selectedBookingStatus, setSelectedBookingStatus] = useState<string>('scheduled');
   const [fetchingEmails, setFetchingEmails] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     fetchCampaigns();
@@ -206,6 +208,44 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
       setError('Failed to fetch emails. Please try again.');
     } finally {
       setLoadingEmails(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!domainName || !templateId || !templateName) {
+      setError('Please fill in Domain Name, Template Name, and Template ID to save the template');
+      return;
+    }
+
+    setSavingTemplate(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/email-templates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          domainName: domainName.trim(),
+          templateId: templateId.trim(),
+          templateName: templateName.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('Template saved successfully!');
+      } else {
+        setError(data.message || 'Failed to save template');
+      }
+    } catch (err) {
+      console.error('Error saving template:', err);
+      setError('Failed to save template. Please try again.');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -520,15 +560,35 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
                 <label htmlFor="templateId" className="block text-sm font-semibold text-gray-700 mb-2">
                   Template ID <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  id="templateId"
-                  value={templateId}
-                  onChange={(e) => setTemplateId(e.target.value)}
-                  placeholder="e.g., d-1234567890abcdef"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                  required
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    id="templateId"
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                    placeholder="e.g., d-1234567890abcdef"
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveTemplate}
+                    disabled={!domainName || !templateId || !templateName || loading}
+                    className="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-all transform hover:scale-[1.02] shadow-md hover:shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
+                  >
+                    {savingTemplate ? (
+                      <>
+                        <Loader className="animate-spin" size={18} />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        Save Template
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div>

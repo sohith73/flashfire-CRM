@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { Lock } from 'lucide-react';
 import EmailCampaign from './EmailCampaign';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
-
-const CORRECT_PASSWORD = 'flashfire@2025';
-const PASSWORD_KEY = 'email_campaign_access_token';
+import { checkAuth, authenticate } from '../utils/auth';
 
 interface ProtectedEmailCampaignProps {
   prefill?: EmailPrefillPayload | null;
@@ -13,7 +11,7 @@ interface ProtectedEmailCampaignProps {
 
 export default function ProtectedEmailCampaign({ prefill, onPrefillConsumed }: ProtectedEmailCampaignProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return sessionStorage.getItem(PASSWORD_KEY) === 'true';
+    return checkAuth();
   });
 
   const [password, setPassword] = useState('');
@@ -22,8 +20,7 @@ export default function ProtectedEmailCampaign({ prefill, onPrefillConsumed }: P
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (password === CORRECT_PASSWORD) {
-      sessionStorage.setItem(PASSWORD_KEY, 'true');
+    if (authenticate(password)) {
       setIsAuthenticated(true);
       setError('');
     } else {

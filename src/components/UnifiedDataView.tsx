@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   Calendar,
   CheckCircle2,
@@ -21,6 +21,7 @@ import {
   Edit,
   Plus,
   MessageCircle,
+  AlertCircle,
 } from 'lucide-react';
 import {
   format,
@@ -189,6 +190,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const fetchDataRef = useRef(false); // Prevent double calls in Strict Mode
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'booking' | 'user'>('all');
@@ -227,6 +229,11 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   }, [usersWithoutBookings]);
 
   const fetchData = useCallback(async (forceRefresh = false) => {
+    if (fetchDataRef.current && !forceRefresh) {
+      return;
+    }
+    fetchDataRef.current = true;
+
     try {
       setRefreshing(true);
       setError(null);
@@ -241,8 +248,9 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
           setLoading(false);
           setRefreshing(false);
           setTimeout(() => {
+            fetchDataRef.current = false;
             fetchData(true).catch(console.error);
-          }, 100);
+          }, 500);
           return;
         }
       }
@@ -275,26 +283,41 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
     } finally {
       setRefreshing(false);
       setLoading(false);
+      fetchDataRef.current = false;
     }
   }, []);
 
   // Removed automatic campaign fetching - now only fetches when "Campaigns" button is clicked
 
   useEffect(() => {
+    if (fetchDataRef.current) {
+      return;
+    }
+
     const cachedBookings = getCachedBookings<Booking>();
     const cachedUsers = getCachedUsers<UserWithoutBooking>();
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     if (cachedBookings && cachedUsers) {
       setBookings(cachedBookings);
       setUsersWithoutBookings(cachedUsers);
       setLoading(false);
-      setTimeout(() => {
+      // Fetch fresh data in background without blocking UI
+      timeoutId = setTimeout(() => {
         fetchData(true).catch(console.error);
-      }, 100);
+      }, 500);
     } else {
       fetchData(false).catch(console.error);
     }
-  }, [fetchData]);
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      fetchDataRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps - only run once on mount
 
   // Removed automatic campaign fetching on data changes - saves bandwidth and resources
 
@@ -613,6 +636,16 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
     setUserCampaignsList([]);
   }, []);
 
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Date.now().toString();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus) => {
     try {
       setUpdatingBookingId(bookingId);
@@ -632,10 +665,14 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
         setCachedBookings(updated);
         return updated;
       });
-      // Removed automatic email opening when marking as no-show
+      
+      // Show toast notification if workflow was triggered
+      if (data.workflowTriggered) {
+        showToast(`Workflow triggered for ${status} action`, 'success');
+      }
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : 'Failed to update booking status');
+      showToast(err instanceof Error ? err.message : 'Failed to update booking status', 'error');
     } finally {
       setUpdatingBookingId(null);
     }
@@ -786,6 +823,33 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
 
   return (
     <div className="w-full py-10 space-y-6">
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-white min-w-[300px] animate-in slide-in-from-right ${
+              toast.type === 'success'
+                ? 'bg-green-500'
+                : toast.type === 'error'
+                ? 'bg-red-500'
+                : 'bg-blue-500'
+            }`}
+          >
+            {toast.type === 'success' && <CheckCircle2 size={20} />}
+            {toast.type === 'error' && <AlertCircle size={20} />}
+            {toast.type === 'info' && <Info size={20} />}
+            <span className="flex-1 font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              className="hover:opacity-80"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       <div className="flex flex-col items-center gap-4">
         <div className="text-center">
           <h3 className="text-sm uppercase tracking-wide text-slate-500 font-semibold mb-2">Unified Data View</h3>
