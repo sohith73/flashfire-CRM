@@ -71,6 +71,7 @@ interface EmailTemplate {
   name: string;
   domainName: string;
   templateId: string;
+  senderEmail?: string;
   createdAt: string;
 }
 
@@ -137,6 +138,9 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
       setTemplateName(template.name);
       setTemplateId(template.templateId);
       setDomainName(template.domainName);
+      if (template.senderEmail) {
+        setSenderEmail(template.senderEmail);
+      }
     }
   };
 
@@ -272,6 +276,7 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
           domainName: domainName.trim(),
           templateId: templateId.trim(),
           templateName: templateName.trim(),
+          senderEmail: senderEmail.trim() || undefined,
         }),
       });
 
@@ -279,6 +284,10 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
 
       if (data.success) {
         setSuccess('Template saved successfully!');
+        // Refresh templates list to show the new one
+        await fetchEmailTemplates();
+        // Clear the selected template to allow saving again
+        setSelectedTemplateId('');
       } else {
         setError(data.message || 'Failed to save template');
       }
@@ -591,7 +600,7 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
                   ) : (
                     emailTemplates.map((template) => (
                       <option key={template.id} value={template.id}>
-                        {template.name} ({template.domainName})
+                        {template.name} ({template.domainName}){template.senderEmail ? ` - ${template.senderEmail}` : ''}
                       </option>
                     ))
                   )}

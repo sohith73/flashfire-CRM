@@ -42,6 +42,7 @@ interface EmailTemplate {
   name: string;
   domainName: string;
   templateId: string;
+  senderEmail?: string;
   createdAt: string;
 }
 
@@ -742,7 +743,7 @@ export default function Workflows() {
                             ) : (
                               <div className="flex gap-1.5 min-w-0">
                                 <select
-                                  value={step.templateName || step.templateId || ''}
+                                  value={step.templateName || ''}
                                   onChange={(e) => {
                                     if (e.target.value === '') {
                                       updateStep(null, index, 'templateId', '');
@@ -753,7 +754,10 @@ export default function Workflows() {
                                     if (template) {
                                       updateStep(null, index, 'templateId', template.templateId);
                                       updateStep(null, index, 'templateName', template.name);
-                                      updateStep(null, index, 'domainName', 'flashfiremails.com');
+                                      updateStep(null, index, 'domainName', template.domainName || 'flashfiremails.com');
+                                      if (template.senderEmail) {
+                                        updateStep(null, index, 'senderEmail', template.senderEmail);
+                                      }
                                     } else {
                                       updateStep(null, index, 'templateId', e.target.value);
                                       updateStep(null, index, 'templateName', e.target.value);
@@ -1068,7 +1072,10 @@ export default function Workflows() {
                                           if (template) {
                                             updateStep(workflow.workflowId, index, 'templateId', template.templateId);
                                             updateStep(workflow.workflowId, index, 'templateName', template.name);
-                                            updateStep(workflow.workflowId, index, 'domainName', 'flashfiremails.com');
+                                            updateStep(workflow.workflowId, index, 'domainName', template.domainName || 'flashfiremails.com');
+                                            if (template.senderEmail) {
+                                              updateStep(workflow.workflowId, index, 'senderEmail', template.senderEmail);
+                                            }
                                           } else {
                                             updateStep(workflow.workflowId, index, 'templateId', e.target.value);
                                             updateStep(workflow.workflowId, index, 'templateName', e.target.value);
