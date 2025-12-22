@@ -119,10 +119,12 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
   const [refreshing, setRefreshing] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedBookingForNotes, setSelectedBookingForNotes] = useState<{ id: string; name: string; notes: string } | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [selectedDateFrom, setSelectedDateFrom] = useState<string>('');
+  const [selectedDateTo, setSelectedDateTo] = useState<string>('');
   const [isDateModalOpen, setIsDateModalOpen] = useState(false);
   const [dateMeetings, setDateMeetings] = useState<Booking[]>([]);
   const [dateBreakdown, setDateBreakdown] = useState<{ booked: number; cancelled: number; noShow: number; completed: number; rescheduled: number; total: number } | null>(null);
+  const [dateRange, setDateRange] = useState<{ fromDate?: string; toDate?: string; date?: string } | null>(null);
   const [loadingDateMeetings, setLoadingDateMeetings] = useState(false);
 
   const fetchBookings = useCallback(async (forceRefresh = false) => {
@@ -526,15 +528,21 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
     [onOpenEmailCampaign],
   );
 
-  const fetchMeetingsByDate = useCallback(async (date: string) => {
-    if (!date) return;
+  const fetchMeetingsByDateRange = useCallback(async (fromDate: string, toDate?: string) => {
+    if (!fromDate) return;
     try {
       setLoadingDateMeetings(true);
-      const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/by-date?date=${date}`);
+      // If toDate is provided, use date range; otherwise use single date
+      const url = toDate 
+        ? `${API_BASE_URL}/api/campaign-bookings/by-date?fromDate=${fromDate}&toDate=${toDate}`
+        : `${API_BASE_URL}/api/campaign-bookings/by-date?date=${fromDate}`;
+      
+      const response = await fetch(url);
       const data = await response.json();
       if (data.success) {
         setDateMeetings(data.data || []);
         setDateBreakdown(data.breakdown || null);
+        setDateRange(data.dateRange || null);
         setIsDateModalOpen(true);
       } else {
         throw new Error(data.message || 'Unable to fetch meetings');
@@ -547,9 +555,14 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
     }
   }, []);
 
-  const handleDateSelect = (date: string) => {
-    setSelectedDate(date);
-    fetchMeetingsByDate(date);
+  const handleDateRangeSelect = () => {
+    if (!selectedDateFrom) {
+      showToast('Please select a start date', 'error');
+      return;
+    }
+    // If toDate is not selected, use fromDate as both (single day)
+    const toDate = selectedDateTo || selectedDateFrom;
+    fetchMeetingsByDateRange(selectedDateFrom, toDate);
   };
 
   const handleReschedule = async (booking: Booking) => {
@@ -744,8 +757,9 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
               key={card.title}
               onClick={isMeetingsToday ? () => {
                 const today = format(new Date(), 'yyyy-MM-dd');
-                setSelectedDate(today);
-                handleDateSelect(today);
+                setSelectedDateFrom(today);
+                setSelectedDateTo(today);
+                fetchMeetingsByDateRange(today, today);
               } : undefined}
               className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-6 ${isMeetingsToday ? 'cursor-pointer hover:border-orange-300 hover:shadow-md transition' : ''}`}
             >
@@ -785,33 +799,56 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
         })}
       </div>
 
-      {/* Date Picker Section */}
+      {/* Date Range Picker Section */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">View Meetings by Date</h3>
-            <p className="text-sm text-slate-500 mt-1">Select a date to see all meetings scheduled for that day</p>
+            <h3 className="text-lg font-semibold text-slate-900">View Meetings by Date Range</h3>
+            <p className="text-sm text-slate-500 mt-1">Select a date range to see all meetings scheduled for those days</p>
           </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                const date = e.target.value;
-                setSelectedDate(date);
-                if (date) {
-                  handleDateSelect(date);
-                }
-              }}
-              className="border border-slate-200 rounded-lg px-4 py-2 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-            {selectedDate && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-600 font-medium">From:</label>
+              <input
+                type="date"
+                value={selectedDateFrom}
+                onChange={(e) => {
+                  setSelectedDateFrom(e.target.value);
+                  // If toDate is before fromDate, clear it
+                  if (selectedDateTo && e.target.value > selectedDateTo) {
+                    setSelectedDateTo('');
+                  }
+                }}
+                max={selectedDateTo || undefined}
+                className="border border-slate-200 rounded-lg px-4 py-2 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-600 font-medium">To:</label>
+              <input
+                type="date"
+                value={selectedDateTo}
+                onChange={(e) => setSelectedDateTo(e.target.value)}
+                min={selectedDateFrom || undefined}
+                className="border border-slate-200 rounded-lg px-4 py-2 bg-white text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <button
+              onClick={handleDateRangeSelect}
+              disabled={!selectedDateFrom || loadingDateMeetings}
+              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loadingDateMeetings ? 'Loading...' : 'View Meetings'}
+            </button>
+            {(selectedDateFrom || selectedDateTo) && (
               <button
                 onClick={() => {
-                  setSelectedDate('');
+                  setSelectedDateFrom('');
+                  setSelectedDateTo('');
                   setIsDateModalOpen(false);
                   setDateMeetings([]);
                   setDateBreakdown(null);
+                  setDateRange(null);
                 }}
                 className="px-3 py-2 text-sm text-slate-600 hover:text-slate-900"
               >
@@ -1298,17 +1335,25 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
         />
       )}
 
-      {/* Date Meetings Modal */}
+      {/* Date Range Meetings Modal */}
       {isDateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div>
                 <h3 className="text-2xl font-bold text-slate-900">
-                  Meetings on {selectedDate ? format(new Date(selectedDate + 'T00:00:00'), 'MMMM d, yyyy') : 'Selected Date'}
+                  {dateRange?.fromDate && dateRange?.toDate && dateRange.fromDate !== dateRange.toDate ? (
+                    <>
+                      Meetings from {format(new Date(dateRange.fromDate + 'T00:00:00'), 'MMMM d, yyyy')} to {format(new Date(dateRange.toDate + 'T00:00:00'), 'MMMM d, yyyy')}
+                    </>
+                  ) : (
+                    <>
+                      Meetings on {dateRange?.fromDate ? format(new Date(dateRange.fromDate + 'T00:00:00'), 'MMMM d, yyyy') : dateRange?.date ? format(new Date(dateRange.date + 'T00:00:00'), 'MMMM d, yyyy') : 'Selected Date'}
+                    </>
+                  )}
                 </h3>
                 {dateBreakdown && (
-                  <div className="flex items-center gap-4 mt-2">
+                  <div className="flex items-center gap-4 mt-2 flex-wrap">
                     <span className="text-sm text-slate-600">
                       <span className="font-semibold text-blue-600">{dateBreakdown.booked}</span> Booked
                     </span>
@@ -1321,6 +1366,11 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                     <span className="text-sm text-slate-600">
                       <span className="font-semibold text-green-600">{dateBreakdown.completed}</span> Completed
                     </span>
+                    {dateBreakdown.rescheduled > 0 && (
+                      <span className="text-sm text-slate-600">
+                        <span className="font-semibold text-amber-600">{dateBreakdown.rescheduled}</span> Rescheduled
+                      </span>
+                    )}
                     <span className="text-sm text-slate-500">
                       Total: <span className="font-semibold">{dateBreakdown.total}</span>
                     </span>
@@ -1332,6 +1382,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                   setIsDateModalOpen(false);
                   setDateMeetings([]);
                   setDateBreakdown(null);
+                  setDateRange(null);
                 }}
                 className="p-2 hover:bg-slate-100 rounded-lg transition"
               >
@@ -1346,14 +1397,19 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
               ) : dateMeetings.length === 0 ? (
                 <div className="text-center py-12">
                   <Calendar className="mx-auto text-slate-300 mb-4" size={48} />
-                  <p className="text-lg font-semibold text-slate-600">No meetings scheduled for this date</p>
-                  <p className="text-sm text-slate-500 mt-2">Try selecting a different date</p>
+                  <p className="text-lg font-semibold text-slate-600">
+                    No meetings scheduled for {dateRange?.fromDate && dateRange?.toDate && dateRange.fromDate !== dateRange.toDate ? 'this date range' : 'this date'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-2">Try selecting a different date range</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {dateMeetings.map((booking) => {
+                    const isDateRange = dateRange?.fromDate && dateRange?.toDate && dateRange.fromDate !== dateRange.toDate;
                     const meetingTime = booking.scheduledEventStartTime
-                      ? format(parseISO(booking.scheduledEventStartTime), 'h:mm a')
+                      ? isDateRange
+                        ? format(parseISO(booking.scheduledEventStartTime), 'MMM d, yyyy • h:mm a')
+                        : format(parseISO(booking.scheduledEventStartTime), 'h:mm a')
                       : 'Not scheduled';
                     return (
                       <div
