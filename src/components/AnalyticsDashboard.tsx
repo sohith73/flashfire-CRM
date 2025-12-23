@@ -16,6 +16,8 @@ import {
   X,
   Info,
   AlertCircle,
+  ChevronDown,
+  DollarSign,
 } from 'lucide-react';
 import NotesModal from './NotesModal';
 import {
@@ -50,7 +52,22 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
-type BookingStatus = 'scheduled' | 'completed' | 'canceled' | 'rescheduled' | 'no-show';
+type BookingStatus = 'scheduled' | 'completed' | 'canceled' | 'rescheduled' | 'no-show' | 'paid' | 'ignored';
+type PlanName = 'PRIME' | 'IGNITE' | 'PROFESSIONAL' | 'EXECUTIVE';
+type PlanOption = { key: PlanName; label: string; price: number; displayPrice: string; currency?: string };
+type PaymentPlan = {
+  name: PlanName;
+  price: number;
+  currency?: string;
+  displayPrice?: string;
+  selectedAt?: string;
+};
+const PLAN_OPTIONS: PlanOption[] = [
+  { key: 'PRIME', label: 'PRIME', price: 119, displayPrice: '$119', currency: 'USD' },
+  { key: 'IGNITE', label: 'IGNITE', price: 199, displayPrice: '$199', currency: 'USD' },
+  { key: 'PROFESSIONAL', label: 'PROFESSIONAL', price: 349, displayPrice: '$349', currency: 'USD' },
+  { key: 'EXECUTIVE', label: 'EXECUTIVE', price: 599, displayPrice: '$599', currency: 'USD' },
+];
 
 interface Booking {
   bookingId: string;
@@ -66,6 +83,7 @@ interface Booking {
   utmCampaign?: string;
   anythingToKnow?: string;
   meetingNotes?: string;
+  paymentPlan?: PaymentPlan;
 }
 
 interface CampaignStats {
@@ -85,6 +103,8 @@ const statusLabels: Record<BookingStatus, string> = {
   canceled: 'Canceled',
   rescheduled: 'Rescheduled',
   'no-show': 'No Show',
+  ignored: 'Ignored',
+  paid: 'Paid',
 };
 
 const statusColors: Record<BookingStatus, string> = {
@@ -93,6 +113,8 @@ const statusColors: Record<BookingStatus, string> = {
   canceled: 'text-red-600 bg-red-100',
   rescheduled: 'text-amber-600 bg-amber-100',
   'no-show': 'text-rose-600 bg-rose-100',
+  ignored: 'text-gray-600 bg-gray-100',
+  paid: 'text-emerald-600 bg-emerald-100',
 };
 
 interface AnalyticsDashboardProps {
@@ -111,6 +133,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
   const [trendRange, setTrendRange] = useState<TrendRange>('30d');
   const [meetingTab, setMeetingTab] = useState<'overview' | 'meetings'>('overview');
   const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
+  const [planFilter, setPlanFilter] = useState<PlanName | 'all'>('all');
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
@@ -126,6 +149,8 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
   const [dateBreakdown, setDateBreakdown] = useState<{ booked: number; cancelled: number; noShow: number; completed: number; rescheduled: number; total: number } | null>(null);
   const [dateRange, setDateRange] = useState<{ fromDate?: string; toDate?: string; date?: string } | null>(null);
   const [loadingDateMeetings, setLoadingDateMeetings] = useState(false);
+  const [openStatusDropdown, setOpenStatusDropdown] = useState<string | null>(null);
+  const [planPickerFor, setPlanPickerFor] = useState<string | null>(null);
 
   const fetchBookings = useCallback(async (forceRefresh = false) => {
     try {
@@ -161,6 +186,25 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openStatusDropdown && !(event.target as Element).closest('.status-dropdown-container')) {
+        setOpenStatusDropdown(null);
+      }
+    };
+
+    if (openStatusDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [openStatusDropdown]);
+
+  useEffect(() => {
+    if (!openStatusDropdown) {
+      setPlanPickerFor(null);
+    }
+  }, [openStatusDropdown]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -386,7 +430,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
 
   const statusDistributionData = useMemo(() => {
     if (bookings.length === 0) return [];
-    return (['scheduled', 'completed', 'rescheduled', 'no-show', 'canceled'] as BookingStatus[]).map(
+    return (['scheduled', 'completed', 'rescheduled', 'no-show', 'canceled', 'ignored', 'paid'] as BookingStatus[]).map(
       (status) => ({
         status: statusLabels[status],
         count: bookings.filter((booking) => booking.bookingStatus === status).length,
@@ -398,6 +442,9 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
     return bookings
       .filter((booking) => {
         if (statusFilter !== 'all' && booking.bookingStatus !== statusFilter) {
+          return false;
+        }
+        if (planFilter !== 'all' && booking.paymentPlan?.name !== planFilter) {
           return false;
         }
         if (utmFilter !== 'all' && (booking.utmSource || 'direct') !== utmFilter) {
@@ -430,7 +477,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
         const bDate = b.scheduledEventStartTime ? parseISO(b.scheduledEventStartTime) : parseISO(b.bookingCreatedAt);
         return bDate.getTime() - aDate.getTime();
       });
-  }, [bookings, statusFilter, utmFilter, fromDate, toDate, search]);
+  }, [bookings, statusFilter, planFilter, utmFilter, fromDate, toDate, search]);
 
   const uniqueSources = useMemo(() => {
     const sources = new Set<string>();
@@ -448,22 +495,47 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
     }, 4000);
   };
 
-  const handleStatusUpdate = async (bookingId: string, status: BookingStatus) => {
+  const getPlanOptionByName = (name?: string | null) => {
+    if (!name) return undefined;
+    return PLAN_OPTIONS.find((p) => p.key === name) || undefined;
+  };
+
+  const handleStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption) => {
     try {
       setUpdatingBookingId(bookingId);
+      const planPayload = plan
+        ? {
+            name: plan.key,
+            price: plan.price,
+            currency: plan.currency || 'USD',
+            displayPrice: plan.displayPrice,
+          }
+        : undefined;
       const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/${bookingId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(planPayload ? { plan: planPayload } : {}),
+        }),
       });
       const data = await response.json();
       if (!data.success) {
         throw new Error(data.message || 'Failed to update booking status');
       }
+      const updatedBooking = data.data as Booking | undefined;
       setBookings((prev) => {
-        const updated = prev.map((booking) => (booking.bookingId === bookingId ? { ...booking, bookingStatus: status } : booking));
+        const updated = prev.map((booking) =>
+          booking.bookingId === bookingId
+            ? {
+                ...booking,
+                bookingStatus: status,
+                paymentPlan: updatedBooking?.paymentPlan || planPayload || booking.paymentPlan,
+              }
+            : booking,
+        );
         setCachedBookings(updated);
         return updated;
       });
@@ -477,6 +549,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
       showToast(err instanceof Error ? err.message : 'Failed to update booking status', 'error');
     } finally {
       setUpdatingBookingId(null);
+      setPlanPickerFor(null);
     }
   };
 
@@ -1098,9 +1171,21 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                 className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
               >
                 <option value="all">All statuses</option>
-                {(['scheduled', 'completed', 'rescheduled', 'no-show', 'canceled'] as BookingStatus[]).map((status) => (
+                {(['scheduled', 'completed', 'rescheduled', 'no-show', 'canceled', 'ignored', 'paid'] as BookingStatus[]).map((status) => (
                   <option key={status} value={status}>
                     {statusLabels[status]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={planFilter}
+                onChange={(e) => setPlanFilter(e.target.value as PlanName | 'all')}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              >
+                <option value="all">All plans</option>
+                {PLAN_OPTIONS.map((plan) => (
+                  <option key={plan.key} value={plan.key}>
+                    {plan.label} ({plan.displayPrice})
                   </option>
                 ))}
               </select>
@@ -1131,12 +1216,13 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                   className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
-              {(fromDate || toDate || search || statusFilter !== 'all' || utmFilter !== 'all') && (
+              {(fromDate || toDate || search || statusFilter !== 'all' || planFilter !== 'all' || utmFilter !== 'all') && (
                 <button
                   onClick={() => {
                     setFromDate('');
                     setToDate('');
                     setStatusFilter('all');
+                    setPlanFilter('all');
                     setUtmFilter('all');
                     setSearch('');
                   }}
@@ -1197,9 +1283,136 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusColors[booking.bookingStatus]}`}>
                             {statusLabels[booking.bookingStatus]}
                           </span>
+                          {booking.paymentPlan && (
+                            <div className="mt-1 inline-flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-800">
+                              <DollarSign size={12} className="text-emerald-600" />
+                              <span>{booking.paymentPlan.name}</span>
+                              <span className="text-emerald-700">{booking.paymentPlan.displayPrice || `$${booking.paymentPlan.price}`}</span>
+                            </div>
+                          )}
+                          {booking.bookingStatus === 'paid' && (
+                            <div className="mt-2">
+                              <select
+                                value={booking.paymentPlan?.name || ''}
+                                onChange={(e) => {
+                                  const plan = getPlanOptionByName(e.target.value);
+                                  if (plan) {
+                                    handleStatusUpdate(booking.bookingId, 'paid', plan);
+                                  }
+                                }}
+                                disabled={updatingBookingId === booking.bookingId}
+                                className="text-xs border border-emerald-200 rounded-lg px-2 py-1 bg-emerald-50 text-emerald-800"
+                              >
+                                <option value="">Select plan</option>
+                                {PLAN_OPTIONS.map((plan) => (
+                                  <option key={plan.key} value={plan.key}>
+                                    {plan.label} ({plan.displayPrice})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-4 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
+                            {/* Status Dropdown */}
+                            <div className="relative status-dropdown-container">
+                              <button
+                                onClick={() => setOpenStatusDropdown(openStatusDropdown === booking.bookingId ? null : booking.bookingId)}
+                                disabled={updatingBookingId === booking.bookingId}
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition disabled:opacity-60 ${
+                                  statusColors[booking.bookingStatus]
+                                } border-current/20 hover:border-current/40`}
+                              >
+                                {updatingBookingId === booking.bookingId ? (
+                                  <>
+                                    <Loader2 className="animate-spin" size={14} />
+                                    <span>Updating...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>{statusLabels[booking.bookingStatus]}</span>
+                                    <ChevronDown size={12} className={`transition-transform duration-200 ${openStatusDropdown === booking.bookingId ? 'rotate-180' : ''}`} />
+                                  </>
+                                )}
+                              </button>
+                              
+                              {openStatusDropdown === booking.bookingId && (
+                                <>
+                                  <div 
+                                    className="fixed inset-0 z-10" 
+                                    onClick={() => setOpenStatusDropdown(null)}
+                                  />
+                                  <div className="absolute right-0 top-full mt-1 z-20 w-52 bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 overflow-hidden">
+                                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-100">
+                                      Change Status
+                                    </div>
+                                    {(['scheduled', 'completed', 'no-show', 'rescheduled', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
+                                      if (status === booking.bookingStatus) return null;
+                                      const statusIcon = status === 'completed' ? CheckCircle2 : status === 'no-show' ? AlertTriangle : status === 'paid' ? DollarSign : status === 'rescheduled' ? Clock : status === 'canceled' ? X : status === 'ignored' ? X : Calendar;
+                                      const StatusIcon = statusIcon;
+                                      const isPaidOption = status === 'paid';
+                                      const isPlanOpen = isPaidOption && planPickerFor === booking.bookingId;
+                                      return (
+                                        <div key={status} className="border-b last:border-b-0 border-slate-100">
+                                          <button
+                                            onClick={() => {
+                                              if (isPaidOption) {
+                                                setPlanPickerFor(booking.bookingId);
+                                                return;
+                                              }
+                                              setPlanPickerFor(null);
+                                              handleStatusUpdate(booking.bookingId, status);
+                                              setOpenStatusDropdown(null);
+                                            }}
+                                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition flex items-center gap-3 group"
+                                          >
+                                            <StatusIcon size={16} className={`${status === 'completed' ? 'text-green-600' : status === 'no-show' ? 'text-rose-600' : status === 'rescheduled' ? 'text-amber-600' : status === 'paid' ? 'text-emerald-600' : status === 'canceled' ? 'text-red-600' : status === 'ignored' ? 'text-gray-600' : 'text-blue-600'}`} />
+                                            <div className="flex flex-col gap-0.5">
+                                              <span className="font-medium">{statusLabels[status]}</span>
+                                              {isPaidOption && <span className="text-[11px] text-slate-500">Select a plan</span>}
+                                            </div>
+                                          </button>
+                                          {isPlanOpen && (
+                                            <div className="px-4 pb-3 grid grid-cols-1 gap-1">
+                                              {PLAN_OPTIONS.map((plan) => (
+                                                <button
+                                                  key={plan.key}
+                                                  onClick={() => {
+                                                    handleStatusUpdate(booking.bookingId, 'paid', plan);
+                                                    setOpenStatusDropdown(null);
+                                                  }}
+                                                  className="flex items-center justify-between w-full rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:border-emerald-200 hover:bg-emerald-100 transition"
+                                                >
+                                                  <div className="flex flex-col text-left">
+                                                    <span>{plan.label}</span>
+                                                    <span className="text-xs font-medium text-emerald-700">{plan.displayPrice}</span>
+                                                  </div>
+                                                  <DollarSign size={16} className="text-emerald-600" />
+                                                </button>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                    <div className="border-t border-slate-200 my-1" />
+                                    <button
+                                      onClick={() => {
+                                        handleReschedule(booking);
+                                        setOpenStatusDropdown(null);
+                                      }}
+                                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-amber-50 transition flex items-center gap-3 text-amber-600 group"
+                                    >
+                                      <Clock size={16} />
+                                      <span className="font-medium">Reschedule</span>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Join Button */}
                             {meetLink && (
                               <a
                                 href={meetLink}
@@ -1211,19 +1424,25 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                 Join
                               </a>
                             )}
+
+                            {/* Take Notes Button */}
                             <button
-                              onClick={() => handleStatusUpdate(booking.bookingId, 'completed')}
-                              disabled={updatingBookingId === booking.bookingId}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500 text-white hover:bg-green-600 transition disabled:opacity-60"
+                              onClick={() => {
+                                setSelectedBookingForNotes({
+                                  id: booking.bookingId,
+                                  name: booking.clientName,
+                                  notes: booking.meetingNotes || '',
+                                });
+                                setIsNotesModalOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
                             >
-                              {updatingBookingId === booking.bookingId ? (
-                                <Loader2 className="animate-spin" size={14} />
-                              ) : (
-                                <CheckCircle2 size={14} />
-                              )}
-                              Completed
+                              <Edit size={14} />
+                              {booking.meetingNotes ? 'Edit Notes' : 'Take Notes'}
                             </button>
-                            {booking.bookingStatus === 'no-show' ? (
+
+                            {/* No-Show Follow-up Actions */}
+                            {booking.bookingStatus === 'no-show' && (
                               <>
                                 <button
                                   onClick={() => handleStatusUpdate(booking.bookingId, 'scheduled')}
@@ -1249,49 +1468,10 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-blue-300 text-blue-600 hover:bg-blue-50 transition"
                                 >
                                   <Mail size={14} />
-                                  Send Mail
+                                  Follow up
                                 </button>
                               </>
-                            ) : (
-                              <button
-                                onClick={() => handleStatusUpdate(booking.bookingId, 'no-show')}
-                                disabled={updatingBookingId === booking.bookingId}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 transition disabled:opacity-60"
-                              >
-                                {updatingBookingId === booking.bookingId ? (
-                                  <Loader2 className="animate-spin" size={14} />
-                                ) : (
-                                  <AlertTriangle size={14} />
-                                )}
-                                Mark No-Show
-                              </button>
                             )}
-                            <button
-                              onClick={() => handleReschedule(booking)}
-                              disabled={updatingBookingId === booking.bookingId}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-amber-300 text-amber-600 hover:bg-amber-50 transition disabled:opacity-60"
-                            >
-                              {updatingBookingId === booking.bookingId ? (
-                                <Loader2 className="animate-spin" size={14} />
-                              ) : (
-                                <Clock size={14} />
-                              )}
-                              Reschedule
-                            </button>
-                            <button
-                              onClick={() => {
-                                setSelectedBookingForNotes({
-                                  id: booking.bookingId,
-                                  name: booking.clientName,
-                                  notes: booking.meetingNotes || '',
-                                });
-                                setIsNotesModalOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
-                            >
-                              <Edit size={14} />
-                              {booking.meetingNotes ? 'Edit Notes' : 'Take Notes'}
-                            </button>
                           </div>
                           {booking.anythingToKnow && (
                             <div className="text-xs text-slate-500 bg-slate-100 rounded-lg px-3 py-2 border border-slate-200">

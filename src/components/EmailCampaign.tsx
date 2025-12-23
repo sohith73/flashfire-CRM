@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { checkContactsPaymentStatus } from '../utils/contactStatus';
 import {
   Send,
   Loader,
@@ -331,7 +332,34 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
       let response;
       let data;
 
-        if (isNoShowTemplate) {
+      // First, check if any emails belong to paid contacts
+      const contactResponse = await fetch(`${API_BASE_URL}/api/contacts/emails`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emails: emailArray }),
+      });
+
+      if (!contactResponse.ok) {
+        throw new Error('Failed to check contact status');
+      }
+
+      const contactData = await contactResponse.json();
+      
+      if (contactData.paidEmails && contactData.paidEmails.length > 0) {
+        const proceed = confirm(
+          `${contactData.paidEmails.length} out of ${emailArray.length} emails are associated with paid contacts. ` +
+          'These contacts will be excluded from the campaign. Do you want to continue?'
+        );
+        
+        if (!proceed) {
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (isNoShowTemplate) {
         // Send immediately using SendEmailCampaign endpoint
         response = await fetch(`${API_BASE_URL}/api/email-campaign/send`, {
           method: 'POST',
@@ -344,13 +372,20 @@ export default function EmailCampaign({ prefill, onPrefillConsumed }: EmailCampa
             templateId,
             emailIds: emailArray,
             senderEmail: senderEmail || undefined,
+            excludePaid: true, // Let the backend know to exclude paid contacts
           }),
         });
 
         data = await response.json();
 
         if (data.success) {
-          setSuccess(`Emails sent immediately! ${data.data.totalSent} email(s) sent successfully, ${data.data.totalFailed} failed.`);
+          let successMessage = `Emails sent! ${data.data.totalSent} email(s) sent successfully, ${data.data.totalFailed} failed.`;
+          
+          if (data.data.skippedPaid) {
+            successMessage += ` ${data.data.skippedPaid} contact(s) were skipped because they are marked as paid.`;
+          }
+          
+          setSuccess(successMessage);
           setDomainName('');
           setTemplateId('');
           setTemplateName('');

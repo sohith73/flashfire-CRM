@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config';
+import { checkContactsPaymentStatus } from '../utils/contactStatus';
 import {
   Send,
   Loader,
@@ -13,8 +15,6 @@ import {
   Play,
 } from 'lucide-react';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
 interface WhatsAppCampaignProps {
   prefill?: WhatsAppPrefillPayload | null;
@@ -70,8 +70,7 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
   const [templateName, setTemplateName] = useState('');
   const [templateId, setTemplateId] = useState('');
   const [mobileNumbers, setMobileNumbers] = useState('');
-  const [param1, setParam1] = useState('https://flashfirejobs.com/pricing');
-  const [param2, setParam2] = useState('https://flashfirejobs.com/pricing');
+  const [paramValues, setParamValues] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -89,6 +88,40 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
   const [selectedBookingStatus, setSelectedBookingStatus] = useState<string>('scheduled');
   const [fetchingMobiles, setFetchingMobiles] = useState(false);
   const [sendingCampaign, setSendingCampaign] = useState<string | null>(null);
+  const [scheduledAt, setScheduledAt] = useState('');
+
+  const TEMPLATE_PARAM_CONFIG: Record<
+    string,
+    Array<{ label: string; placeholder?: string; helper?: string }>
+  > = {
+    flashfire_appointment_reminder: [
+      { label: 'Recipient Name ({{1}})', placeholder: 'e.g., Alex' },
+      { label: 'Date ({{2}})', placeholder: 'e.g., Jan 05' },
+      { label: 'Time ({{3}})', placeholder: 'e.g., 4:00 PM IST' },
+      { label: 'Meeting Link ({{4}})', placeholder: 'https://meet.example.com/...' },
+      { label: 'Reschedule Link ({{5}})', placeholder: 'https://calendly.com/...' },
+    ],
+  };
+
+  const getParamConfig = (name: string) => {
+    const key = (name || '').toLowerCase();
+    if (TEMPLATE_PARAM_CONFIG[key]) return TEMPLATE_PARAM_CONFIG[key];
+    return [
+      { label: 'Parameter 1 ({{1}})', placeholder: 'Value for {{1}}' },
+      { label: 'Parameter 2 ({{2}})', placeholder: 'Value for {{2}}' },
+    ];
+  };
+
+  const ensureParamValues = (name: string) => {
+    const cfg = getParamConfig(name);
+    setParamValues((prev) => {
+      const next = [...prev];
+      if (next.length < cfg.length) {
+        return [...next, ...Array(cfg.length - next.length).fill('')];
+      }
+      return next.slice(0, cfg.length);
+    });
+  };
 
   // Handle prefill
   useEffect(() => {
@@ -102,6 +135,7 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
         const template = templates.find(t => t.id === prefill.templateId);
         if (template) {
           setTemplateName(template.name);
+          ensureParamValues(template.name);
         }
       }
       setActiveTab('create');
@@ -122,6 +156,10 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    ensureParamValues(templateName);
+  }, [templateName]);
+
   const fetchTemplates = async () => {
     setLoadingTemplates(true);
     try {
@@ -133,6 +171,7 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
         if (data.templates && data.templates.length > 0) {
           setTemplateName(data.templates[0].name);
           setTemplateId(data.templates[0].id);
+          ensureParamValues(data.templates[0].name);
         }
       }
     } catch (err) {
@@ -234,11 +273,54 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
 
     setSendingCampaign(campaignId);
     try {
+      // First, get the campaign details to check recipient status
+      const campaignResponse = await fetch(`${API_BASE_URL}/api/whatsapp-campaigns/${campaignId}`);
+      if (!campaignResponse.ok) {
+        throw new Error(`Failed to fetch campaign details: ${campaignResponse.statusText}`);
+      }
+      const campaignData = await campaignResponse.json();
+      
+      if (!campaignData.success) {
+        throw new Error(campaignData.message || 'Failed to fetch campaign details');
+      }
+
+      // Extract contact IDs from the campaign
+      const contactIds = campaignData.data.recipients
+        .filter((r: any) => r.status === 'PENDING')
+        .map((r: any) => r.contactId)
+        .filter(Boolean);
+
+      if (contactIds.length > 0) {
+        // Check if any contacts are marked as paid
+        const { allPaid, paidContactIds } = await checkContactsPaymentStatus(contactIds);
+        
+        if (allPaid) {
+          alert('All selected contacts are marked as paid. No messages will be sent to paid contacts.');
+          return;
+        }
+        
+        if (paidContactIds.length > 0) {
+          const proceed = confirm(
+            `${paidContactIds.length} out of ${contactIds.length} contacts are marked as paid. ` +
+            'These contacts will be skipped. Do you want to continue sending to the remaining contacts?'
+          );
+          
+          if (!proceed) {
+            setSendingCampaign(null);
+            return;
+          }
+        }
+      }
+
+      // Proceed with sending the campaign
       const response = await fetch(`${API_BASE_URL}/api/whatsapp-campaigns/${campaignId}/send-now`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          excludePaid: true // Let the backend know to exclude paid contacts
+        }),
       });
 
       if (!response.ok) {
@@ -248,7 +330,11 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
       const data = await response.json();
 
       if (data.success) {
-        alert('Campaign messages are being sent! Check back in a few minutes.');
+        const message = data.skippedPaid > 0 
+          ? `Campaign sent! ${data.skippedPaid} contacts were skipped because they are marked as paid.`
+          : 'Campaign messages are being sent! Check back in a few minutes.';
+        
+        alert(message);
         fetchScheduledCampaigns(true);
         fetchCampaigns(1, true);
       } else {
@@ -263,7 +349,7 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, options?: { scheduled?: boolean }) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -282,15 +368,34 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
       }
 
       // Prepare parameters
-      const parameters = [];
-      if (param1) parameters.push(param1);
-      if (param2) parameters.push(param2);
+      const cfg = getParamConfig(templateName);
+      const parameters = paramValues.slice(0, cfg.length);
+      const missing = parameters.findIndex((p) => !p || p.trim() === '');
+      if (missing !== -1) {
+        setError('Please fill all required template parameters');
+        return;
+      }
+
+      let scheduledAtIso: string | undefined;
+      if (options?.scheduled) {
+        if (!scheduledAt) {
+          setError('Please pick a date & time to schedule the WhatsApp send');
+          return;
+        }
+        const parsed = new Date(scheduledAt);
+        if (Number.isNaN(parsed.getTime())) {
+          setError('Invalid schedule time. Please pick a valid date & time.');
+          return;
+        }
+        scheduledAtIso = parsed.toISOString();
+      }
 
       const payload = {
         templateName,
         templateId,
         mobileNumbers: mobilesArray,
-        parameters
+        parameters,
+        ...(scheduledAtIso ? { scheduledAt: scheduledAtIso } : {})
       };
 
       console.log('Creating WhatsApp campaign:', payload);
@@ -313,8 +418,8 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
       if (data.success) {
         setSuccess(data.message || 'WhatsApp campaign created successfully!');
         setMobileNumbers('');
-        setParam1('https://flashfirejobs.com/pricing');
-        setParam2('https://flashfirejobs.com/pricing');
+        setParamValues((prev) => prev.map(() => ''));
+        setScheduledAt('');
         
         // Refresh campaigns in background (don't wait) with cache busting
         setTimeout(() => {
@@ -445,6 +550,7 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
                         setTemplateName(e.target.value);
                         const template = templates.find(t => t.name === e.target.value);
                         setTemplateId(template?.id || '');
+                        ensureParamValues(e.target.value);
                       }}
                       className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       required
@@ -540,36 +646,55 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label htmlFor="param1" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Parameter 1 (for {'{{2}}'})
-                  </label>
-                  <input
-                    type="text"
-                    id="param1"
-                    value={param1}
-                    onChange={(e) => setParam1(e.target.value)}
-                    placeholder="https://flashfirejobs.com/pricing"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">This value will replace {'{{2}}'} in the template</p>
-                </div>
+                {getParamConfig(templateName).map((field, idx) => (
+                  <div key={field.label}>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      {field.label}
+                    </label>
+                    <input
+                      type="text"
+                      value={paramValues[idx] || ''}
+                      onChange={(e) => {
+                        const next = [...paramValues];
+                        next[idx] = e.target.value;
+                        setParamValues(next);
+                      }}
+                      placeholder={field.placeholder || `Value for {{${idx + 1}}}`}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                    {field.helper && <p className="text-xs text-gray-500 mt-1">{field.helper}</p>}
+                  </div>
+                ))}
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="param2" className="block text-sm font-semibold text-gray-700 mb-2">
-                    Parameter 2 (for {'{{3}}'})
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Schedule send (optional)
                   </label>
                   <input
-                    type="text"
-                    id="param2"
-                    value={param2}
-                    onChange={(e) => setParam2(e.target.value)}
-                    placeholder="https://flashfirejobs.com/pricing"
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                   />
-                  <p className="text-xs text-gray-500 mt-1">This value will replace {'{{3}}'} in the template</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Pick a time to send. Leave empty to use default cadence.
+                  </p>
                 </div>
               </div>
+
+              {templateName.toLowerCase() === 'flashfire_appointment_reminder' && (
+                <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-emerald-800 mb-2">Template Preview</p>
+                  <div className="text-sm text-emerald-900 leading-relaxed">
+                    <p>Hi {'{{1}}'}, your Flashfire consultation is confirmed for {'{{2}}'} at {'{{3}}'}.</p>
+                    <p className="mt-2">👉 Join the call here: {'{{4}}'}</p>
+                    <p className="mt-1">Need to reschedule? You can select another time here: {'{{5}}'}</p>
+                    <p className="mt-2">Looking forward to speaking with you!</p>
+                  </div>
+                </div>
+              )}
 
               {(templateName.toLowerCase().includes('no show') || templateName.toLowerCase().includes('noshow')) ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
@@ -606,23 +731,43 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={loading || loadingTemplates || templates.length === 0}
-                className="w-full py-4 px-6 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold text-lg hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <>
-                    <Loader className="animate-spin" size={20} />
-                    Creating Campaign...
-                  </>
-                ) : (
-                  <>
-                    <Send size={20} />
-                    Create WhatsApp Campaign
-                  </>
-                )}
-              </button>
+              <div className="flex flex-col md:flex-row gap-3">
+                <button
+                  type="submit"
+                  disabled={loading || loadingTemplates || templates.length === 0}
+                  className="flex-1 py-4 px-6 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold text-lg hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="animate-spin" size={20} />
+                      Creating Campaign...
+                    </>
+                  ) : (
+                    <>
+                      <Send size={20} />
+                      Create WhatsApp Campaign
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e as any, { scheduled: true })}
+                  disabled={loading || loadingTemplates || templates.length === 0}
+                  className="flex-1 py-4 px-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-bold text-lg hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-[1.02] shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="animate-spin" size={20} />
+                      Scheduling...
+                    </>
+                  ) : (
+                    <>
+                      <Clock size={20} />
+                      Schedule WhatsApp
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         )}
