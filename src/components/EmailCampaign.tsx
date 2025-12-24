@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { checkContactsPaymentStatus } from '../utils/contactStatus';
+// import { checkContactsPaymentStatus } from '../utils/contactStatus';
 import {
   Send,
   Loader,
