@@ -185,17 +185,15 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       setRefreshing(false);
       setLoading(false);
     }
-  }, [planFilter, utmFilter, search, fromDate, toDate, minAmount, maxAmount]);
+  }, [planFilter, statusFilter, utmFilter, search, fromDate, toDate, minAmount, maxAmount]);
 
-  useEffect(() => {
-    fetchLeads(bookingsPage);
-  }, [fetchLeads]);
-
+  // Reset to page 1 and fetch when filters change
   useEffect(() => {
     const page = 1;
     setBookingsPage(page);
     fetchLeads(page);
-  }, [planFilter, utmFilter, statusFilter, search, fromDate, toDate, minAmount, maxAmount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planFilter, statusFilter, utmFilter, search, fromDate, toDate, minAmount, maxAmount]);
 
   const uniqueSources = useMemo(() => {
     const sources = new Set<string>();
@@ -245,6 +243,64 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       return bDate.getTime() - aDate.getTime();
     });
   }, [bookings]);
+
+  // Calculate status statistics from filtered data (unique leads only)
+  const statusStats = useMemo(() => {
+    const stats = {
+      scheduled: 0,
+      completed: 0,
+      canceled: 0,
+      'no-show': 0,
+      rescheduled: 0,
+      ignored: 0,
+      paid: 0,
+    };
+
+    filteredData.forEach((lead) => {
+      if (lead.status && stats.hasOwnProperty(lead.status)) {
+        stats[lead.status as keyof typeof stats]++;
+      }
+    });
+
+    const total = filteredData.length;
+    const booked = stats.scheduled + stats.rescheduled; // Booked includes scheduled and rescheduled
+
+    return {
+      booked,
+      completed: stats.completed,
+      canceled: stats.canceled,
+      noShow: stats['no-show'],
+      rescheduled: stats.rescheduled,
+      ignored: stats.ignored,
+      paid: stats.paid,
+      total,
+    };
+  }, [filteredData]);
+
+  // Format date range for display
+  const dateRangeDisplay = useMemo(() => {
+    if (!fromDate && !toDate) return null;
+    
+    const formatDate = (dateStr: string) => {
+      if (!dateStr) return '';
+      try {
+        // Handle YYYY-MM-DD format from date inputs
+        const date = parseISO(dateStr + 'T00:00:00');
+        return format(date, 'MMMM d, yyyy');
+      } catch {
+        return dateStr;
+      }
+    };
+
+    if (fromDate && toDate) {
+      return `${formatDate(fromDate)} to ${formatDate(toDate)}`;
+    } else if (fromDate) {
+      return `From ${formatDate(fromDate)}`;
+    } else if (toDate) {
+      return `Until ${formatDate(toDate)}`;
+    }
+    return null;
+  }, [fromDate, toDate]);
 
   const handleSelectAll = useCallback(() => {
     if (selectedRows.size === filteredData.length) {
@@ -480,6 +536,37 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Leads</h1>
         <p className="text-slate-600">View and manage all clients. Each client appears once with their latest booking status. Status and amount are editable.</p>
       </div>
+
+      {/* Status Statistics - Show when date filters are selected */}
+      {dateRangeDisplay && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h2 className="text-base font-semibold text-slate-900 mb-4">
+            Meetings from {dateRangeDisplay}
+          </h2>
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-slate-600 text-sm font-medium">Booked</span>
+              <span className="text-lg font-bold text-blue-600">{statusStats.booked}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-slate-600 text-sm font-medium">Cancelled</span>
+              <span className="text-lg font-bold text-red-600">{statusStats.canceled}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-slate-600 text-sm font-medium">No-Show</span>
+              <span className="text-lg font-bold text-red-600">{statusStats.noShow}</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-slate-600 text-sm font-medium">Completed</span>
+              <span className="text-lg font-bold text-green-600">{statusStats.completed}</span>
+            </div>
+            <div className="flex items-baseline gap-2 ml-auto">
+              <span className="text-slate-500 text-sm font-medium">Total:</span>
+              <span className="text-lg font-bold text-slate-700">{statusStats.total}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {totalRevenue > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
