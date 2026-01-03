@@ -101,6 +101,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [planFilter, setPlanFilter] = useState<PlanName | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
@@ -186,6 +187,15 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       setLoading(false);
     }
   }, [planFilter, statusFilter, utmFilter, search, fromDate, toDate, minAmount, maxAmount]);
+
+  // Debounce search input to avoid too many API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput);
+    }, 300); // Wait 300ms after user stops typing
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // Reset to page 1 and fetch when filters change
   useEffect(() => {
@@ -627,9 +637,9 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
           <Search size={16} className="text-slate-400" />
           <input
             type="text"
-            placeholder="Search by name, email, or source…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email, phone, or source…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="text-sm bg-transparent focus:outline-none"
           />
         </div>
@@ -701,7 +711,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
             className="border border-slate-200 rounded-lg px-3 py-2 bg-white w-24"
           />
         </div>
-        {(fromDate || toDate || search || planFilter !== 'all' || utmFilter !== 'all' || statusFilter !== 'all' || minAmount || maxAmount) && (
+        {(fromDate || toDate || searchInput || planFilter !== 'all' || utmFilter !== 'all' || statusFilter !== 'all' || minAmount || maxAmount) && (
           <button
             onClick={() => {
               setFromDate('');
@@ -709,6 +719,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
               setPlanFilter('all');
               setUtmFilter('all');
               setStatusFilter('all');
+              setSearchInput('');
               setSearch('');
               setMinAmount('');
               setMaxAmount('');
