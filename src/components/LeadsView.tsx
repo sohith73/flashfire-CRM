@@ -756,14 +756,14 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                     </button>
                   </th>
                   <th className="px-1 py-2 font-semibold w-16">Type</th>
-                  <th className="px-1 py-2 font-semibold w-32">Name</th>
-                  <th className="px-1 py-2 font-semibold w-40">Email</th>
-                  <th className="px-1 py-2 font-semibold w-28">Phone</th>
-                  <th className="px-1 py-2 font-semibold w-36">Latest Meeting</th>
-                  <th className="px-1 py-2 font-semibold w-28">Source</th>
-                  <th className="px-1 py-2 font-semibold w-24">Status</th>
-                  <th className="px-1.5 py-2 font-semibold w-32">Amount</th>
-                  <th className="px-1.5 py-2 font-semibold w-40">Actions</th>
+                  <th className="px-1 py-2 font-semibold w-28">Name</th>
+                  <th className="px-1 py-2 font-semibold w-36">Email</th>
+                  <th className="px-1 py-2 font-semibold w-24">Phone</th>
+                  <th className="px-1 py-2 font-semibold w-32">Latest Meeting</th>
+                  <th className="px-1 py-2 font-semibold w-24">Source</th>
+                  <th className="px-1 py-2 font-semibold w-20">Status</th>
+                  <th className="px-1 py-2 font-semibold w-24">Amount</th>
+                  <th className="px-1 py-2 font-semibold w-auto min-w-[200px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -935,13 +935,13 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                           )}
                         </div>
                       </td>
-                      <td className="px-1.5 py-2">
+                      <td className="px-1 py-2">
                         {row.paymentPlan ? (
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-1 rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">
-                              <DollarSign size={11} className="text-emerald-600" />
-                              <span>{row.paymentPlan.name}</span>
-                              <span className="text-emerald-700">{row.paymentPlan.displayPrice || `$${row.paymentPlan.price}`}</span>
+                            <div className="flex items-center gap-0.5 rounded border border-emerald-100 bg-emerald-50 px-1 py-0.5 text-xs font-semibold text-emerald-800">
+                              <DollarSign size={10} className="text-emerald-600" />
+                              <span className="truncate">{row.paymentPlan.name}</span>
+                              <span className="text-emerald-700 truncate">{row.paymentPlan.displayPrice || `$${row.paymentPlan.price}`}</span>
                             </div>
                             {row.status === 'paid' && (
                               <>
@@ -982,8 +982,8 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                           <span className="text-slate-400 text-xs">—</span>
                         )}
                       </td>
-                      <td className="px-1.5 py-2">
-                        <div className="flex flex-wrap items-center gap-1">
+                      <td className="px-1 py-2">
+                        <div className="flex items-center gap-0.5 flex-nowrap">
                           {row.meetLink && (
                             <a
                               href={row.meetLink}
