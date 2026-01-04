@@ -737,9 +737,8 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       </div>
 
       <div className="overflow-hidden bg-white border border-slate-200 rounded-lg">
-        <div className="overflow-x-auto">
-          <div className="max-h-[calc(100vh-350px)] overflow-y-auto">
-            <table className="w-full divide-y divide-slate-200 text-sm">
+        <div className="max-h-[calc(100vh-350px)] overflow-y-auto">
+          <table className="w-full divide-y divide-slate-200 text-sm table-fixed">
               <thead className="bg-slate-50 sticky top-0 z-10">
                 <tr className="text-left text-slate-500">
                   <th className="px-1.5 py-2 font-semibold w-10">
@@ -1112,7 +1111,6 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
               </tbody>
             </table>
           </div>
-        </div>
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
             <div className="text-sm text-slate-600">
             {bookingsPagination.pages > 1 ? (
