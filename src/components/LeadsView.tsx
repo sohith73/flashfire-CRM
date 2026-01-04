@@ -763,7 +763,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                   <th className="px-1 py-2 font-semibold w-24">Source</th>
                   <th className="px-1 py-2 font-semibold w-20">Status</th>
                   <th className="px-1 py-2 font-semibold w-24">Amount</th>
-                  <th className="px-1 py-2 font-semibold w-auto min-w-[200px]">Actions</th>
+                  <th className="px-1.5 py-2 font-semibold w-auto min-w-[280px]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -983,15 +983,15 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                         )}
                       </td>
                       <td className="px-1 py-2">
-                        <div className="flex items-center gap-0.5 flex-nowrap">
+                        <div className="flex items-center gap-1 flex-wrap">
                           {row.meetLink && (
                             <a
                               href={row.meetLink}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-white border border-slate-200 hover:border-orange-400 hover:text-orange-600 transition justify-center whitespace-nowrap"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-white border border-slate-200 hover:border-orange-400 hover:text-orange-600 transition justify-center whitespace-nowrap"
                             >
-                              <ExternalLink size={10} />
+                              <ExternalLink size={12} />
                               Join
                             </a>
                           )}
@@ -1004,9 +1004,9 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                               });
                               setIsNotesModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition whitespace-nowrap justify-center"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 transition whitespace-nowrap justify-center"
                           >
-                            <Edit size={10} />
+                            <Edit size={12} />
                             Notes
                           </button>
                           <button
@@ -1016,9 +1016,9 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                                 reason: 'lead_followup',
                               });
                             }}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition justify-center whitespace-nowrap"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition justify-center whitespace-nowrap"
                           >
-                            <Mail size={10} />
+                            <Mail size={12} />
                             Email
                           </button>
                           {onOpenWhatsAppCampaign && row.phone && row.phone !== 'Not Specified' && (
@@ -1032,17 +1032,17 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                                   });
                                 }
                               }}
-                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-green-500 text-white hover:bg-green-600 transition justify-center whitespace-nowrap"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-green-500 text-white hover:bg-green-600 transition justify-center whitespace-nowrap"
                             >
-                              <MessageCircle size={10} />
+                              <MessageCircle size={12} />
                               WA
                             </button>
                           )}
                           <button
                             onClick={() => handleDeleteClick(row)}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-red-500 text-white hover:bg-red-600 transition justify-center whitespace-nowrap"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold bg-red-500 text-white hover:bg-red-600 transition justify-center whitespace-nowrap"
                           >
-                            <Trash2 size={10} />
+                            <Trash2 size={12} />
                             Delete
                           </button>
                         </div>
