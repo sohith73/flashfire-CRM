@@ -738,7 +738,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
 
       <div className="overflow-hidden bg-white border border-slate-200 rounded-lg">
         <div className="max-h-[calc(100vh-350px)] overflow-y-auto">
-          <table className="w-full divide-y divide-slate-200 text-sm table-fixed">
+          <table className="w-full text-sm table-auto border-separate border-spacing-y-2 border-spacing-x-1">
               <thead className="bg-slate-50 sticky top-0 z-10">
                 <tr className="text-left text-slate-500">
                   <th className="px-1.5 py-2 font-semibold w-10">
@@ -765,7 +765,7 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                   <th className="px-3 py-2 font-semibold">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {filteredData.map((row) => {
                   const scheduledDate = row.scheduledTime
                     ? format(parseISO(row.scheduledTime), 'MMM d, yyyy • h:mm a')
@@ -780,7 +780,9 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                   return (
                     <tr
                       key={row.id}
-                      className={`hover:bg-slate-50/60 transition ${isSelected ? 'bg-orange-50' : ''}`}
+                      className={`transition rounded-xl border ${
+                        isSelected ? 'bg-orange-50 border-orange-200 shadow-sm' : 'bg-white border-slate-200 shadow'
+                      }`}
                     >
                       <td className="px-1.5 py-2">
                         <button
@@ -1263,4 +1265,3 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
     </div>
   );
 }
-
