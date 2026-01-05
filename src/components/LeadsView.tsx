@@ -30,6 +30,7 @@ import {
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import NotesModal from './NotesModal';
+import FollowUpModal, { type FollowUpData } from './FollowUpModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -120,6 +121,8 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedLeadForDelete, setSelectedLeadForDelete] = useState<{ name: string; email: string; phone?: string } | null>(null);
   const [deletingLead, setDeletingLead] = useState(false);
+  const [isFollowUpModalOpen, setIsFollowUpModalOpen] = useState(false);
+  const [selectedBookingForFollowUp, setSelectedBookingForFollowUp] = useState<Booking | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -409,12 +412,35 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       if (!data.success) {
         throw new Error(data.message || 'Failed to update booking status');
       }
+      const updatedBooking = data.data as Booking | undefined;
+      
+      // Update local bookings state and prepare updated booking for follow-up modal
+      let updatedBookingForFollowUp: Booking | null = null;
+      setBookings((prev) => {
+        return prev.map((booking) => {
+          if (booking.bookingId === bookingId) {
+            const updated = {
+              ...booking,
+              bookingStatus: status,
+              paymentPlan: updatedBooking?.paymentPlan || planPayload || booking.paymentPlan,
+            };
+            if (status === 'completed') {
+              updatedBookingForFollowUp = updated;
+            }
+            return updated;
+          }
+          return booking;
+        });
+      });
       
       // Show toast notification if workflow was triggered
       if (data.workflowTriggered) {
         showToast(`Workflow triggered for ${status} action`, 'success');
-      } else {
-        showToast(`Status updated to ${status}`, 'success');
+      }
+
+      if (status === 'completed' && updatedBookingForFollowUp) {
+        setSelectedBookingForFollowUp(updatedBookingForFollowUp);
+        setIsFollowUpModalOpen(true);
       }
       
       await fetchLeads(bookingsPage);
@@ -425,6 +451,34 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
       setUpdatingBookingId(null);
       setPlanPickerFor(null);
       setOpenStatusDropdown(null);
+    }
+  };
+
+  const handleScheduleFollowUp = async (followUpData: FollowUpData) => {
+    if (!selectedBookingForFollowUp) return;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/${selectedBookingForFollowUp.bookingId}/follow-up`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bookingId: selectedBookingForFollowUp.bookingId,
+          ...followUpData,
+        }),
+      });
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to schedule follow-up');
+      }
+
+      showToast('Follow-up scheduled successfully!', 'success');
+      setIsFollowUpModalOpen(false);
+      setSelectedBookingForFollowUp(null);
+    } catch (err) {
+      throw err; // Re-throw to let modal handle error display
     }
   };
 
@@ -1117,6 +1171,21 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
           clientName={selectedBookingForNotes.name}
           initialNotes={selectedBookingForNotes.notes}
           onSave={handleSaveNotes}
+        />
+      )}
+
+      {/* Follow-Up Modal */}
+      {selectedBookingForFollowUp && (
+        <FollowUpModal
+          isOpen={isFollowUpModalOpen}
+          onClose={() => {
+            setIsFollowUpModalOpen(false);
+            setSelectedBookingForFollowUp(null);
+          }}
+          onSchedule={handleScheduleFollowUp}
+          clientName={selectedBookingForFollowUp.clientName}
+          clientEmail={selectedBookingForFollowUp.clientEmail}
+          clientPhone={selectedBookingForFollowUp.clientPhone}
         />
       )}
 
