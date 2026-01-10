@@ -2136,7 +2136,7 @@ export default function Workflows() {
                 {selectedStatus && (
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={fetchBookingsByStatus}
+                      onClick={() => fetchBookingsByStatus()}
                       disabled={loadingBookings}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition text-sm font-semibold disabled:opacity-60"
                     >
