@@ -113,7 +113,7 @@ interface WorkflowLog {
     senderEmail?: string;
     order: number;
   };
-  status: 'scheduled' | 'executed' | 'failed';
+  status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
   scheduledFor: string;
   executedAt?: string;
   error?: string;
