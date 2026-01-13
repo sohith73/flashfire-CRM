@@ -113,7 +113,7 @@ interface WorkflowLog {
     senderEmail?: string;
     order: number;
   };
-  status: 'scheduled' | 'executed' | 'failed';
+  status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
   scheduledFor: string;
   executedAt?: string;
   error?: string;
@@ -314,6 +314,8 @@ export default function Workflows() {
   const [totalLogPages, setTotalLogPages] = useState(1);
   const [totalLogs, setTotalLogs] = useState(0);
   const [sendingLogId, setSendingLogId] = useState<string | null>(null);
+  const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ show: boolean; log: WorkflowLog | null }>({ show: false, log: null });
   const [logStats, setLogStats] = useState({
     total: 0,
     scheduled: 0,
@@ -327,6 +329,7 @@ export default function Workflows() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [triggeringBulk, setTriggeringBulk] = useState(false);
   const [bulkResult, setBulkResult] = useState<any>(null);
+  const [includeCountries, setIncludeCountries] = useState<string[]>([]);
 
   // Plan configuration modal state for finalkk template
   const [showPlanConfigModal, setShowPlanConfigModal] = useState(false);
@@ -726,12 +729,15 @@ export default function Workflows() {
     return colors[action] || 'bg-slate-100 text-slate-700';
   };
 
-  const fetchBookingsByStatus = async () => {
+  const fetchBookingsByStatus = async (includeCountriesOverride?: string[]) => {
     if (!selectedStatus) return;
     
     try {
       setLoadingBookings(true);
-      const response = await fetch(`${API_BASE_URL}/api/workflows/bulk/bookings-by-status?status=${selectedStatus}`);
+      const countriesToInclude = includeCountriesOverride !== undefined ? includeCountriesOverride : includeCountries;
+      const includeCountriesParam = countriesToInclude && countriesToInclude.length > 0 ? JSON.stringify(countriesToInclude) : '';
+      const url = `${API_BASE_URL}/api/workflows/bulk/bookings-by-status?status=${selectedStatus}${includeCountriesParam ? `&includeCountries=${encodeURIComponent(includeCountriesParam)}` : ''}`;
+      const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
@@ -753,7 +759,12 @@ export default function Workflows() {
       return;
     }
 
-    if (!confirm(`Are you sure you want to trigger workflows for all bookings with status "${selectedStatus}"? This will send workflows to ${bookingsData?.summary?.withoutScheduledWorkflows || 0} bookings that don't already have workflows scheduled.`)) {
+    const includedList = [];
+    if (includeCountries.includes('IN')) includedList.push('India');
+    if (includeCountries.includes('US')) includedList.push('USA/Canada');
+    const includeText = includedList.length > 0 ? ` (only ${includedList.join(' and ')})` : ' (all countries)';
+    
+    if (!confirm(`Are you sure you want to trigger workflows for all bookings with status "${selectedStatus}"${includeText}? This will send workflows to ${bookingsData?.summary?.withoutScheduledWorkflows || 0} bookings that don't already have workflows scheduled.`)) {
       return;
     }
 
@@ -768,7 +779,8 @@ export default function Workflows() {
         },
         body: JSON.stringify({
           status: selectedStatus,
-          skipExisting: true
+          skipExisting: true,
+          includeCountries: includeCountries || []
         }),
       });
 
@@ -777,9 +789,7 @@ export default function Workflows() {
       if (data.success) {
         setBulkResult(data.data);
         showToast(`Successfully processed ${data.data.processed} bookings`, 'success');
-        // Refresh bookings data
         await fetchBookingsByStatus();
-        // Refresh logs
         if (activeTab === 'logs') {
           fetchLogs();
           fetchLogStats();
@@ -818,13 +828,143 @@ export default function Workflows() {
             Failed
           </span>
         );
+      case 'cancelled':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700">
+            <XCircle size={12} />
+            Cancelled
+          </span>
+        );
       default:
         return null;
     }
   };
 
+  const handleDeleteWorkflow = async (log: WorkflowLog, deleteAll: boolean = false) => {
+    try {
+      setDeletingLogId(log.logId);
+
+      if (deleteAll) {
+        const response = await fetch(
+          `${API_BASE_URL}/api/workflow-logs/booking/${log.bookingId}/status/${log.triggerAction}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (data.success) {
+          showToast(`Deleted ${data.data.deleted} workflow(s) for this user`, 'success');
+          fetchLogs();
+          fetchLogStats();
+        } else {
+          showToast(data.message || 'Failed to delete workflows', 'error');
+        }
+      } else {
+        const response = await fetch(
+          `${API_BASE_URL}/api/workflow-logs/${log.logId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (data.success) {
+          showToast('Workflow deleted successfully', 'success');
+          fetchLogs();
+          fetchLogStats();
+        } else {
+          showToast(data.message || 'Failed to delete workflow', 'error');
+        }
+      }
+
+      setDeleteModal({ show: false, log: null });
+    } catch (error) {
+      console.error('Error deleting workflow:', error);
+      showToast('Failed to delete workflow', 'error');
+    } finally {
+      setDeletingLogId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
+      {/* Delete Confirmation Modal */}
+      {deleteModal.show && deleteModal.log && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 rounded-full p-2">
+                <Trash2 className="text-red-600" size={20} />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Delete Workflow</h3>
+            </div>
+            <p className="text-slate-600 mb-6">
+              Are you sure you want to remove this scheduled workflow?
+            </p>
+            <div className="bg-slate-50 rounded-lg p-4 mb-6">
+              <div className="text-sm text-slate-700 space-y-1">
+                <p><strong>Client:</strong> {deleteModal.log.clientName || deleteModal.log.clientEmail}</p>
+                <p><strong>Status:</strong> {getActionLabel(deleteModal.log.triggerAction)}</p>
+                <p><strong>Channel:</strong> {deleteModal.log.step.channel === 'email' ? 'Email' : 'WhatsApp'}</p>
+                <p><strong>Scheduled For:</strong> {format(new Date(deleteModal.log.scheduledFor), 'MMM d, yyyy • h:mm a')}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleDeleteWorkflow(deleteModal.log!, false)}
+                disabled={deletingLogId === deleteModal.log!.logId}
+                className="w-full px-4 py-2.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {deletingLogId === deleteModal.log!.logId ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={16} />
+                    <span>Delete This Workflow</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => handleDeleteWorkflow(deleteModal.log!, true)}
+                disabled={deletingLogId === deleteModal.log!.logId}
+                className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {deletingLogId === deleteModal.log!.logId ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={16} />
+                    <span>Delete All Workflows for This User ({getActionLabel(deleteModal.log!.triggerAction)})</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setDeleteModal({ show: false, log: null })}
+                disabled={deletingLogId === deleteModal.log!.logId}
+                className="w-full px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {toasts.map((toast) => (
@@ -1073,6 +1213,11 @@ export default function Workflows() {
                                       {!step.templateName && !step.templateId ? (
                                         <option value="">Select WhatsApp Template</option>
                                       ) : null}
+                                      {step.templateName && !watiTemplates.find(t => t.name === step.templateName) && (
+                                        <option value={step.templateName} key={`stored-new-${step.templateName}`}>
+                                          {step.templateName}
+                                        </option>
+                                      )}
                                       {watiTemplates.map((template) => (
                                         <option key={template.id} value={template.name}>
                                           {template.name}
@@ -1175,6 +1320,27 @@ export default function Workflows() {
                               )}
                             </div>
                           </div>
+                          {step.channel === 'whatsapp' && (
+                            <div className="mt-2 space-y-2">
+                              {step.templateName && (
+                                <div className="text-xs text-slate-600 font-semibold px-2 py-1 bg-slate-50 rounded border border-slate-200">
+                                  Template: {step.templateName}
+                                </div>
+                              )}
+                              {step.templateName && step.templateId && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    showToast('WhatsApp template configuration saved!', 'success');
+                                  }}
+                                  className="w-full px-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+                                >
+                                  <Save size={14} />
+                                  Save Template
+                                </button>
+                              )}
+                            </div>
+                          )}
                           {step.channel === 'email' && (
                             <div className="mt-2 space-y-2">
                               {step.templateName && (
@@ -1470,6 +1636,11 @@ export default function Workflows() {
                                             {!step.templateName && !step.templateId ? (
                                               <option value="">Select Template</option>
                                             ) : null}
+                                            {step.templateName && !watiTemplates.find(t => t.name === step.templateName) && (
+                                              <option value={step.templateName} key={`stored-${step.templateName}`}>
+                                                {step.templateName}
+                                              </option>
+                                            )}
                                             {watiTemplates.map((template) => (
                                               <option key={template.id} value={template.name}>
                                                 {template.name}
@@ -1573,6 +1744,28 @@ export default function Workflows() {
                                     />
                                   )}
                                 </div>
+                                {step.channel === 'whatsapp' && (
+                                  <div className="mt-2 space-y-2">
+                                    {step.templateName && (
+                                      <div className="text-xs text-slate-600 font-semibold px-2 py-1 bg-slate-50 rounded border border-slate-200">
+                                        Template: {step.templateName}
+                                      </div>
+                                    )}
+                                    {step.templateName && step.templateId && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          showToast('WhatsApp template configuration saved!', 'success');
+                                          saveWorkflow(workflow);
+                                        }}
+                                        className="w-full px-3 py-2 bg-blue-500 text-white rounded text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
+                                      >
+                                        <Save size={14} />
+                                        Save Template
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                                 {step.channel === 'email' && (
                                   <div className="mt-2 space-y-2">
                                     {step.templateName && (
@@ -1883,60 +2076,74 @@ export default function Workflows() {
                                 </div>
                               </td>
                               <td className="py-4 px-4">
-                                {log.step.channel === 'email' && log.status !== 'executed' && (
-                                  <button
-                                    onClick={async () => {
-                                      if (sendingLogId === log.logId) return;
+                                <div className="flex items-center gap-2">
+                                  {log.step.channel === 'email' && log.status !== 'executed' && log.status !== 'cancelled' && (
+                                    <button
+                                      onClick={async () => {
+                                        if (sendingLogId === log.logId) return;
 
-                                      try {
-                                        setSendingLogId(log.logId);
-                                        const response = await fetch(
-                                          `${API_BASE_URL}/api/workflow-logs/${log.logId}/send-now`,
-                                          {
-                                            method: 'POST',
-                                            headers: {
-                                              'Content-Type': 'application/json',
-                                            },
+                                        try {
+                                          setSendingLogId(log.logId);
+                                          const response = await fetch(
+                                            `${API_BASE_URL}/api/workflow-logs/${log.logId}/send-now`,
+                                            {
+                                              method: 'POST',
+                                              headers: {
+                                                'Content-Type': 'application/json',
+                                              },
+                                            }
+                                          );
+
+                                          const data = await response.json();
+
+                                          if (data.success) {
+                                            showToast('Email sent successfully!', 'success');
+                                            fetchLogs();
+                                            fetchLogStats();
+                                          } else {
+                                            showToast(data.message || 'Failed to send email', 'error');
                                           }
-                                        );
-
-                                        const data = await response.json();
-
-                                        if (data.success) {
-                                          showToast('Email sent successfully!', 'success');
-                                          // Refresh logs
-                                          fetchLogs();
-                                          fetchLogStats();
-                                        } else {
-                                          showToast(data.message || 'Failed to send email', 'error');
+                                        } catch (error) {
+                                          console.error('Error sending email:', error);
+                                          showToast('Failed to send email', 'error');
+                                        } finally {
+                                          setSendingLogId(null);
                                         }
-                                      } catch (error) {
-                                        console.error('Error sending email:', error);
-                                        showToast('Failed to send email', 'error');
-                                      } finally {
-                                        setSendingLogId(null);
-                                      }
-                                    }}
-                                    disabled={sendingLogId === log.logId}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title="Send email now"
-                                  >
-                                    {sendingLogId === log.logId ? (
-                                      <>
-                                        <Loader2 className="animate-spin" size={14} />
-                                        <span>Sending...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Send size={14} />
-                                        <span>Send Now</span>
-                                      </>
-                                    )}
-                                  </button>
-                                )}
-                                {log.status === 'executed' && (
-                                  <span className="text-xs text-green-600 font-medium">Sent</span>
-                                )}
+                                      }}
+                                      disabled={sendingLogId === log.logId}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                      title="Send email now"
+                                    >
+                                      {sendingLogId === log.logId ? (
+                                        <>
+                                          <Loader2 className="animate-spin" size={14} />
+                                          <span>Sending...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Send size={14} />
+                                          <span>Send Now</span>
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                  {log.status === 'scheduled' && (
+                                    <button
+                                      onClick={() => setDeleteModal({ show: true, log })}
+                                      disabled={deletingLogId === log.logId}
+                                      className="inline-flex items-center gap-1.5 px-2 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                      title="Delete workflow"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                  {log.status === 'executed' && (
+                                    <span className="text-xs text-green-600 font-medium">Sent</span>
+                                  )}
+                                  {log.status === 'cancelled' && (
+                                    <span className="text-xs text-slate-500 font-medium">Cancelled</span>
+                                  )}
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -2075,7 +2282,7 @@ export default function Workflows() {
                 {selectedStatus && (
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={fetchBookingsByStatus}
+                      onClick={() => fetchBookingsByStatus()}
                       disabled={loadingBookings}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition text-sm font-semibold disabled:opacity-60"
                     >
@@ -2112,24 +2319,72 @@ export default function Workflows() {
                     </div>
 
                     {bookingsData.summary.withoutScheduledWorkflows > 0 && (
-                      <div className="flex items-center gap-2 pt-4 border-t border-slate-200">
-                        <button
-                          onClick={handleTriggerBulkWorkflows}
-                          disabled={triggeringBulk || bookingsData.summary.withoutScheduledWorkflows === 0}
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {triggeringBulk ? (
-                            <>
-                              <Loader2 className="animate-spin" size={18} />
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <Play size={18} />
-                              Trigger Workflows for {bookingsData.summary.withoutScheduledWorkflows} Bookings
-                            </>
-                          )}
-                        </button>
+                      <div className="pt-4 border-t border-slate-200 space-y-4">
+                        <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="text-sm font-semibold text-slate-900 mb-3">
+                            Include Countries Only
+                          </div>
+                          <div className="text-xs text-slate-600 mb-3">
+                            Select countries to include in workflow triggers. Only bookings with phone numbers from selected countries will be included. Leave all unchecked to include all countries.
+                          </div>
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={includeCountries.includes('US')}
+                                onChange={(e) => {
+                                  const newInclude = e.target.checked
+                                    ? [...includeCountries, 'US']
+                                    : includeCountries.filter(c => c !== 'US');
+                                  setIncludeCountries(newInclude);
+                                  fetchBookingsByStatus(newInclude);
+                                }}
+                                className="w-4 h-4 text-orange-500 border-slate-300 rounded focus:ring-orange-500 focus:ring-2"
+                              />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">USA & Canada</div>
+                                <div className="text-xs text-slate-600">Include only numbers starting with +1</div>
+                              </div>
+                            </label>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={includeCountries.includes('IN')}
+                                onChange={(e) => {
+                                  const newInclude = e.target.checked
+                                    ? [...includeCountries, 'IN']
+                                    : includeCountries.filter(c => c !== 'IN');
+                                  setIncludeCountries(newInclude);
+                                  fetchBookingsByStatus(newInclude);
+                                }}
+                                className="w-4 h-4 text-orange-500 border-slate-300 rounded focus:ring-orange-500 focus:ring-2"
+                              />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-slate-900">India</div>
+                                <div className="text-xs text-slate-600">Include only numbers starting with +91</div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleTriggerBulkWorkflows}
+                            disabled={triggeringBulk || bookingsData.summary.withoutScheduledWorkflows === 0}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {triggeringBulk ? (
+                              <>
+                                <Loader2 className="animate-spin" size={18} />
+                                Processing...
+                              </>
+                            ) : (
+                              <>
+                                <Play size={18} />
+                                Trigger Workflows for {bookingsData.summary.withoutScheduledWorkflows} Bookings
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     )}
 
