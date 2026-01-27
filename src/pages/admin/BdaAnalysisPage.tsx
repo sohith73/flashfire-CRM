@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 const ADMIN_TOKEN_KEY = 'flashfire_crm_admin_token';
+const INR_PER_USD = 91.67;
+
+type BookingStatus = 'paid' | 'scheduled' | 'completed';
+type PlanName = 'PRIME' | 'IGNITE' | 'PROFESSIONAL' | 'EXECUTIVE';
 
 interface BdaPerformance {
   _id: string;
@@ -71,13 +75,26 @@ export default function BdaAnalysisPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
+  const [planFilter, setPlanFilter] = useState<PlanName | 'all'>('all');
+  const [bdaEmailFilter, setBdaEmailFilter] = useState('');
+  const [commissionConfigs, setCommissionConfigs] = useState<
+    Array<{ planName: PlanName; basePrice: number; currency: string; incentivePercent: number }>
+  >([]);
+  const [commissionLoading, setCommissionLoading] = useState(false);
+  const [commissionSaving, setCommissionSaving] = useState(false);
+  const [commissionError, setCommissionError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!adminToken) {
       navigate('/admin/dashboard');
       return;
     }
     fetchAnalysis();
-  }, [adminToken, navigate]);
+    fetchCommissionConfig();
+  }, [adminToken, navigate, fromDate, toDate, statusFilter, planFilter, bdaEmailFilter]);
 
   const fetchAnalysis = async () => {
     if (!adminToken) return;
@@ -86,7 +103,14 @@ export default function BdaAnalysisPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/bda/analysis`, {
+      const params = new URLSearchParams();
+      if (fromDate) params.append('fromDate', fromDate);
+      if (toDate) params.append('toDate', toDate);
+      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (planFilter !== 'all') params.append('planName', planFilter);
+      if (bdaEmailFilter.trim()) params.append('bdaEmail', bdaEmailFilter.trim());
+
+      const response = await fetch(`${API_BASE_URL}/api/bda/analysis?${params.toString()}`, {
         headers: {
           Authorization: `Bearer ${adminToken}`,
         },
@@ -103,6 +127,63 @@ export default function BdaAnalysisPage() {
       setError(err instanceof Error ? err.message : 'Failed to load analysis');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCommissionConfig = async () => {
+    if (!adminToken) return;
+    setCommissionLoading(true);
+    setCommissionError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/crm/admin/bda-incentives/config`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      const body = await res.json();
+      if (!body.success || !Array.isArray(body.configs)) {
+        throw new Error(body.message || 'Failed to load commission config');
+      }
+      setCommissionConfigs(
+        body.configs.map((c: any) => ({
+          planName: c.planName as PlanName,
+          basePrice: c.basePrice,
+          currency: c.currency,
+          incentivePercent: Number(c.incentivePercent) || 0
+        }))
+      );
+    } catch (err) {
+      setCommissionError(err instanceof Error ? err.message : 'Failed to load commission config');
+    } finally {
+      setCommissionLoading(false);
+    }
+  };
+
+  const handleSaveCommission = async () => {
+    if (!adminToken) return;
+    setCommissionSaving(true);
+    setCommissionError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/crm/admin/bda-incentives/config`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          configs: commissionConfigs.map((c) => ({
+            planName: c.planName,
+            incentivePercent: c.incentivePercent
+          }))
+        })
+      });
+      const body = await res.json();
+      if (!body.success) {
+        throw new Error(body.message || 'Failed to save commission config');
+      }
+      fetchCommissionConfig();
+    } catch (err) {
+      setCommissionError(err instanceof Error ? err.message : 'Failed to save commission config');
+    } finally {
+      setCommissionSaving(false);
     }
   };
 
@@ -204,6 +285,77 @@ export default function BdaAnalysisPage() {
         <p className="text-slate-600">Comprehensive statistics on leads and BDA performance</p>
       </div>
 
+      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-end gap-4">
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600">From date</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600">To date</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600">Status</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as BookingStatus | 'all')}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+          >
+            <option value="all">All</option>
+            <option value="paid">Paid</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600">Plan</label>
+          <select
+            value={planFilter}
+            onChange={(e) => setPlanFilter(e.target.value as PlanName | 'all')}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+          >
+            <option value="all">All plans</option>
+            <option value="PRIME">PRIME</option>
+            <option value="IGNITE">IGNITE</option>
+            <option value="PROFESSIONAL">PROFESSIONAL</option>
+            <option value="EXECUTIVE">EXECUTIVE</option>
+          </select>
+        </div>
+        <div className="space-y-1 flex-1 min-w-[180px]">
+          <label className="block text-xs font-semibold text-slate-600">BDA email</label>
+          <input
+            type="email"
+            value={bdaEmailFilter}
+            onChange={(e) => setBdaEmailFilter(e.target.value)}
+            placeholder="Filter by BDA email"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setFromDate('');
+            setToDate('');
+            setStatusFilter('all');
+            setPlanFilter('all');
+            setBdaEmailFilter('');
+          }}
+          className="ml-auto px-4 py-2 text-xs font-semibold border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
+        >
+          Reset filters
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white border border-slate-200 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
@@ -277,6 +429,84 @@ export default function BdaAnalysisPage() {
                   <div className="text-2xl font-bold text-emerald-600">${topBda.totalRevenue.toLocaleString()}</div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-slate-900">BDA Incentive Settings</h3>
+          {commissionError && <span className="text-xs text-red-600 font-semibold">{commissionError}</span>}
+        </div>
+        {commissionLoading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="animate-spin text-orange-500" size={24} />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Plan</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Base Price (USD)</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Incentive %</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Incentive / Lead (INR)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {commissionConfigs.map((cfg) => {
+                  const incentivePerLeadInr =
+                    ((cfg.basePrice || 0) * (cfg.incentivePercent || 0) * INR_PER_USD) / 100;
+                  return (
+                    <tr key={cfg.planName} className="border-b border-slate-100">
+                      <td className="px-4 py-2 font-semibold text-slate-900">{cfg.planName}</td>
+                      <td className="px-4 py-2 text-slate-700">
+                        {cfg.currency}
+                        {cfg.basePrice}
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={Number.isNaN(cfg.incentivePercent) ? '' : cfg.incentivePercent}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value);
+                            setCommissionConfigs((prev) =>
+                              prev.map((p) =>
+                                p.planName === cfg.planName
+                                  ? {
+                                      ...p,
+                                      incentivePercent: Number.isNaN(value) ? 0 : value
+                                    }
+                                  : p
+                              )
+                            );
+                          }}
+                          className="w-28 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-slate-700">
+                        ₹{incentivePerLeadInr.toFixed(0)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveCommission}
+                disabled={commissionSaving}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {commissionSaving && <Loader2 className="animate-spin" size={16} />}
+                <span>{commissionSaving ? 'Saving…' : 'Save Commission'}</span>
+              </button>
             </div>
           </div>
         )}

@@ -405,6 +405,22 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   }, [statusFilter, planFilter, utmFilter, search, fromDate, toDate, typeFilter, fetchBookings]);
 
   useEffect(() => {
+    const handleBookingUpdate = (event: CustomEvent) => {
+      const { bookingId } = event.detail;
+      if (bookingId) {
+        if (typeFilter === 'booking' || typeFilter === 'all') {
+          fetchBookings(bookingsPage);
+        }
+      }
+    };
+
+    window.addEventListener('bookingUpdated', handleBookingUpdate as EventListener);
+    return () => {
+      window.removeEventListener('bookingUpdated', handleBookingUpdate as EventListener);
+    };
+  }, [bookingsPage, typeFilter, fetchBookings]);
+
+  useEffect(() => {
     if (typeFilter === 'user' || typeFilter === 'all') {
       const page = 1;
       setUsersPage(page);
