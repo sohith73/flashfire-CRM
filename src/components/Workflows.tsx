@@ -332,6 +332,7 @@ export default function Workflows() {
   const [includeCountries, setIncludeCountries] = useState<string[]>([]);
   const [resendingFailedWhatsApp, setResendingFailedWhatsApp] = useState(false);
   const [resendFailedResult, setResendFailedResult] = useState<any>(null);
+  const [resendFailedStatus, setResendFailedStatus] = useState<string>('');
 
   // Plan configuration modal state for finalkk template
   const [showPlanConfigModal, setShowPlanConfigModal] = useState(false);
@@ -808,7 +809,12 @@ export default function Workflows() {
   };
 
   const handleResendAllFailedWhatsApp = async () => {
-    if (!confirm('Are you sure you want to resend all failed WhatsApp workflow messages? This will delete the old failed records and create new ones for successful sends.')) {
+    if (!resendFailedStatus) {
+      showToast('Please select a status to resend failed WhatsApp messages for.', 'error');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to resend all failed WhatsApp workflow messages for bookings currently in status "${resendFailedStatus}"? This will delete the old failed records and create new ones for successful sends.`)) {
       return;
     }
 
@@ -821,6 +827,7 @@ export default function Workflows() {
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ status: resendFailedStatus }),
       });
 
       const data = await response.json();
@@ -2486,27 +2493,49 @@ export default function Workflows() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
               <h2 className="text-xl font-semibold text-slate-900 mb-4">Send to All Failed WhatsApp</h2>
               <p className="text-slate-600 mb-6">
-                Resend all failed WhatsApp workflow messages. The system will use the correct template name and parameters, and delete old failed records to reduce the count.
+                Resend failed WhatsApp workflow messages for bookings in a specific current status. The system will use the correct template name and parameters, and delete old failed records to reduce the count.
               </p>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleResendAllFailedWhatsApp}
-                  disabled={resendingFailedWhatsApp}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {resendingFailedWhatsApp ? (
-                    <>
-                      <Loader2 className="animate-spin" size={18} />
-                      Resending...
-                    </>
-                  ) : (
-                    <>
-                      <MessageCircle size={18} />
-                      Send to All Failed WhatsApp
-                    </>
-                  )}
-                </button>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Select Status <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={resendFailedStatus}
+                    onChange={(e) => {
+                      setResendFailedStatus(e.target.value);
+                      setResendFailedResult(null);
+                    }}
+                    className="w-full max-w-xs px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-slate-700 bg-white"
+                  >
+                    <option value="">Select a status...</option>
+                    <option value="no-show">No Show</option>
+                    <option value="completed">Completed</option>
+                    <option value="canceled">Canceled</option>
+                    <option value="rescheduled">Rescheduled</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleResendAllFailedWhatsApp}
+                    disabled={resendingFailedWhatsApp || !resendFailedStatus}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {resendingFailedWhatsApp ? (
+                      <>
+                        <Loader2 className="animate-spin" size={18} />
+                        Resending...
+                      </>
+                    ) : (
+                      <>
+                        <MessageCircle size={18} />
+                        Send to All Failed WhatsApp
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
               {resendFailedResult && (

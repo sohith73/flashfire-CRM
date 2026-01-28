@@ -89,6 +89,8 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
   const [fetchingMobiles, setFetchingMobiles] = useState(false);
   const [sendingCampaign, setSendingCampaign] = useState<string | null>(null);
   const [scheduledAt, setScheduledAt] = useState('');
+  const [fromDateFilter, setFromDateFilter] = useState('');
+  const [toDateFilter, setToDateFilter] = useState('');
 
   const TEMPLATE_PARAM_CONFIG: Record<
     string,
@@ -253,7 +255,11 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
     setSuccess('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/whatsapp-campaigns/mobile-numbers?status=${status}`);
+      const params = new URLSearchParams({ status });
+      if (fromDateFilter) params.append('fromDate', fromDateFilter);
+      if (toDateFilter) params.append('toDate', toDateFilter);
+
+      const response = await fetch(`${API_BASE_URL}/api/whatsapp-campaigns/mobile-numbers?${params.toString()}`);
       const data = await response.json();
 
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
@@ -595,46 +601,69 @@ export default function WhatsAppCampaign({ prefill, onPrefillConsumed }: WhatsAp
                   Mobile Numbers (Recipients)
                 </label>
                 
-                {/* Booking Status Filter */}
-                <div className="mb-3 flex items-center gap-3 bg-gradient-to-r from-green-50 to-purple-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex-1">
-                    <label htmlFor="bookingStatus" className="block text-xs font-semibold text-gray-700 mb-2">
-                      Get Mobile Numbers by Booking Status
-                    </label>
-                    <select
-                      id="bookingStatus"
-                      value={selectedBookingStatus}
-                      onChange={async (e) => {
-                        setSelectedBookingStatus(e.target.value);
-                        await handleGetMobilesByStatus(e.target.value);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-sm"
-                    >
-                      <option value="scheduled">Scheduled</option>
-                      <option value="completed">Completed</option>
-                      <option value="no-show">No Show</option>
-                      <option value="rescheduled">Rescheduled</option>
-                      <option value="canceled">Canceled</option>
-                    </select>
+                {/* Booking Status & Date Filter */}
+                <div className="mb-3 flex flex-col md:flex-row items-start md:items-center gap-3 bg-gradient-to-r from-green-50 to-purple-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex-1 space-y-2">
+                    <div>
+                      <label htmlFor="bookingStatus" className="block text-xs font-semibold text-gray-700 mb-1">
+                        Get Mobile Numbers by Booking Status
+                      </label>
+                      <select
+                        id="bookingStatus"
+                        value={selectedBookingStatus}
+                        onChange={(e) => {
+                          setSelectedBookingStatus(e.target.value);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all text-sm"
+                      >
+                        <option value="scheduled">Scheduled</option>
+                        <option value="completed">Completed</option>
+                        <option value="no-show">No Show</option>
+                        <option value="rescheduled">Rescheduled</option>
+                        <option value="canceled">Canceled</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2 text-xs text-gray-700">
+                      <div className="flex-1">
+                        <label className="block mb-1">From Date (optional)</label>
+                        <input
+                          type="date"
+                          value={fromDateFilter}
+                          onChange={(e) => setFromDateFilter(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block mb-1">To Date (optional)</label>
+                        <input
+                          type="date"
+                          value={toDateFilter}
+                          onChange={(e) => setToDateFilter(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleGetMobilesByStatus(selectedBookingStatus)}
-                    disabled={fetchingMobiles}
-                    className="mt-6 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed text-sm flex items-center gap-2"
-                  >
-                    {fetchingMobiles ? (
-                      <>
-                        <Loader className="animate-spin" size={16} />
-                        Fetching...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw size={16} />
-                        Get Mobiles
-                      </>
-                    )}
-                  </button>
+                  <div className="flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleGetMobilesByStatus(selectedBookingStatus)}
+                      disabled={fetchingMobiles}
+                      className="mt-2 md:mt-6 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-[1.02] shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed text-sm flex items-center gap-2"
+                    >
+                      {fetchingMobiles ? (
+                        <>
+                          <Loader className="animate-spin" size={16} />
+                          Fetching...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw size={16} />
+                          Get Mobiles
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <textarea

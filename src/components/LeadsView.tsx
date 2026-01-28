@@ -33,7 +33,6 @@ import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import NotesModal from './NotesModal';
 import FollowUpModal, { type FollowUpData } from './FollowUpModal';
 import PlanDetailsModal, { type PlanDetailsData } from './PlanDetailsModal';
-import MeetingNotesModal from './MeetingNotesModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -135,8 +134,6 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
   const [isPlanDetailsModalOpen, setIsPlanDetailsModalOpen] = useState(false);
   const [selectedBookingForPlanDetails, setSelectedBookingForPlanDetails] = useState<{ bookingId: string; status: BookingStatus; booking: Booking } | null>(null);
   const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ bookingId: string; status: BookingStatus; plan?: PlanOption } | null>(null);
-  const [isMeetingNotesModalOpen, setIsMeetingNotesModalOpen] = useState(false);
-  const [selectedBookingForMeetingNotes, setSelectedBookingForMeetingNotes] = useState<{ bookingId: string; name: string; transcriptId?: string } | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
   const statusDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1263,21 +1260,6 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
                         </button>
                         <button
                           onClick={() => {
-                            const booking = bookings.find(b => b.bookingId === row.bookingId);
-                            setSelectedBookingForMeetingNotes({
-                              bookingId: row.bookingId!,
-                              name: row.name,
-                              transcriptId: booking?.firefliesTranscriptId,
-                            });
-                            setIsMeetingNotesModalOpen(true);
-                          }}
-                          title="Get Meeting Notes"
-                          className="inline-flex items-center justify-center p-0.5 rounded border border-blue-300 bg-white text-blue-600 hover:bg-blue-50 transition flex-shrink-0"
-                        >
-                          <FileText size={9} />
-                        </button>
-                        <button
-                          onClick={() => {
                             onOpenEmailCampaign({
                               recipients: [row.email],
                               reason: 'lead_followup',
@@ -1460,20 +1442,6 @@ export default function LeadsView({ onOpenEmailCampaign, onOpenWhatsAppCampaign 
         currentPlan={selectedBookingForPlanDetails?.booking.paymentPlan}
         defaultDays={7}
       />
-
-      {/* Meeting Notes Modal */}
-      {isMeetingNotesModalOpen && selectedBookingForMeetingNotes && (
-        <MeetingNotesModal
-          isOpen={isMeetingNotesModalOpen}
-          onClose={() => {
-            setIsMeetingNotesModalOpen(false);
-            setSelectedBookingForMeetingNotes(null);
-          }}
-          bookingId={selectedBookingForMeetingNotes.bookingId}
-          clientName={selectedBookingForMeetingNotes.name}
-          existingTranscriptId={selectedBookingForMeetingNotes.transcriptId}
-        />
-      )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && selectedLeadForDelete && (
