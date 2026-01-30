@@ -54,24 +54,78 @@ export default function ClaimLeadsView() {
   const [myLeadsToDate, setMyLeadsToDate] = useState<string>('');
   const [myLeadsStatusFilter, setMyLeadsStatusFilter] = useState<'all' | 'paid' | 'scheduled' | 'completed'>('all');
   const [myLeadsPlanFilter, setMyLeadsPlanFilter] = useState<PlanName | 'all'>('all');
+  
+  // Commission configs for multi-currency support
+  const [commissionConfigs, setCommissionConfigs] = useState<
+    Array<{ planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }>
+  >([]);
+
+  // Fetch commission configs for multi-currency support
+  useEffect(() => {
+    const fetchCommissionConfigs = async () => {
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/bda/incentives/config`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const body = await res.json();
+        if (body.success && Array.isArray(body.configs)) {
+          const mappedConfigs = body.configs.map((c: any) => ({
+            planName: c.planName as PlanName,
+            basePrice: Number(c.basePrice ?? c.basePriceUsd) ?? 0,
+            currency: c.currency || 'USD',
+            incentivePerLeadInr: Number(c.incentivePerLeadInr) ?? 0
+          }));
+          
+          // Add default CAD configs if they don't exist
+          const hasCadConfigs = mappedConfigs.some((c: { planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }) => c.currency === 'CAD');
+          if (!hasCadConfigs) {
+            const cadDefaults = [
+              { planName: 'PRIME' as PlanName, basePrice: 139, currency: 'CAD', incentivePerLeadInr: 400 },
+              { planName: 'IGNITE' as PlanName, basePrice: 239, currency: 'CAD', incentivePerLeadInr: 600 },
+              { planName: 'PROFESSIONAL' as PlanName, basePrice: 409, currency: 'CAD', incentivePerLeadInr: 1200 },
+              { planName: 'EXECUTIVE' as PlanName, basePrice: 799, currency: 'CAD', incentivePerLeadInr: 2200 },
+            ];
+            mappedConfigs.push(...cadDefaults);
+          }
+          
+          setCommissionConfigs(mappedConfigs);
+        }
+      } catch (err) {
+        // Silently fail - fall back to incentiveConfig
+        console.error('Failed to fetch commission configs:', err);
+      }
+    };
+    fetchCommissionConfigs();
+  }, [token]);
 
   /** Prorated incentive: same % as (amount paid / current plan price). Uses plan config from BDA Incentive Settings (single source of truth).
-   * Note: For multi-currency support, this should use currency-specific configs. Currently uses basePriceUsd which works for USD.
-   * For CAD, the admin should configure CAD-specific base prices in the admin settings. */
+   * Supports multi-currency by using currency-specific base prices when available. */
   const getIncentiveProrated = useCallback((planName?: PlanName, amountPaid?: number, currency?: string): number => {
     if (!planName || amountPaid == null || amountPaid <= 0) return 0;
+    
+    const paymentCurrency = currency || 'USD';
+    
+    // Try to find currency-specific config first
+    if (commissionConfigs.length > 0) {
+      const currencyConfig = commissionConfigs.find(
+        c => c.planName === planName && c.currency === paymentCurrency
+      );
+      
+      if (currencyConfig) {
+        const basePrice = currencyConfig.basePrice > 0 ? currencyConfig.basePrice : 1;
+        const paymentRatio = Math.min(1, amountPaid / basePrice);
+        return currencyConfig.incentivePerLeadInr * paymentRatio;
+      }
+    }
+    
+    // Fallback to incentiveConfig (USD-based)
     const config = incentiveConfig[planName];
     if (!config) return 0;
-    
-    // For now, use basePriceUsd (works for USD)
-    // TODO: Update PlanConfigContext to support currency-specific base prices
-    // For CAD, admin needs to configure CAD base prices separately in admin settings
-    // currency parameter is reserved for future multi-currency support
-    void currency; // Explicitly mark as intentionally unused
     const basePrice = config.basePriceUsd > 0 ? config.basePriceUsd : 1;
     const paymentRatio = Math.min(1, amountPaid / basePrice);
     return config.incentivePerLeadInr * paymentRatio;
-  }, [incentiveConfig]);
+  }, [incentiveConfig, commissionConfigs]);
 
   const fetchMyLeads = useCallback(async () => {
     if (!token) return;
