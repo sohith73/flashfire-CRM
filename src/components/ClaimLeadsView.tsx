@@ -58,7 +58,7 @@ export default function ClaimLeadsView() {
   /** Prorated incentive: same % as (amount paid / current plan price). Uses plan config from BDA Incentive Settings (single source of truth).
    * Note: For multi-currency support, this should use currency-specific configs. Currently uses basePriceUsd which works for USD.
    * For CAD, the admin should configure CAD-specific base prices in the admin settings. */
-  const getIncentiveProrated = useCallback((planName?: PlanName, amountPaid?: number, currency?: string): number => {
+  const getIncentiveProrated = useCallback((planName?: PlanName, amountPaid?: number, _currency?: string): number => {
     if (!planName || amountPaid == null || amountPaid <= 0) return 0;
     const config = incentiveConfig[planName];
     if (!config) return 0;
@@ -66,6 +66,7 @@ export default function ClaimLeadsView() {
     // For now, use basePriceUsd (works for USD)
     // TODO: Update PlanConfigContext to support currency-specific base prices
     // For CAD, admin needs to configure CAD base prices separately in admin settings
+    // _currency parameter is reserved for future multi-currency support
     const basePrice = config.basePriceUsd > 0 ? config.basePriceUsd : 1;
     const paymentRatio = Math.min(1, amountPaid / basePrice);
     return config.incentivePerLeadInr * paymentRatio;
