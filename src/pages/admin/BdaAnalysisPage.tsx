@@ -150,7 +150,7 @@ export default function BdaAnalysisPage() {
       }));
 
       // If no CAD configs exist, add default CAD configurations
-      const hasCadConfigs = mappedConfigs.some(c => c.currency === 'CAD');
+      const hasCadConfigs = mappedConfigs.some((c: { planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }) => c.currency === 'CAD');
       if (!hasCadConfigs) {
         const cadDefaults: Array<{ planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }> = [
           { planName: 'PRIME', basePrice: 139, currency: 'CAD', incentivePerLeadInr: 400 },
