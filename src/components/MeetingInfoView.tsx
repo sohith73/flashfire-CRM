@@ -9,7 +9,7 @@ interface MeetingInfoRow {
   bookingId: string;
   clientName: string;
   dateOfMeet: string | null;
-  meetingVideoUrl: string;
+  meetingVideoUrl: string | null;
 }
 
 export default function MeetingInfoView() {
@@ -77,16 +77,20 @@ export default function MeetingInfoView() {
                     : '—'}
                 </td>
                 <td className="px-3 py-2">
-                  <a
-                    href={row.meetingVideoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 font-semibold truncate max-w-[320px]"
-                    title={row.meetingVideoUrl}
-                  >
-                    <ExternalLink size={12} />
-                    {row.meetingVideoUrl.replace(/^https?:\/\//, '').slice(0, 40)}…
-                  </a>
+                  {row.meetingVideoUrl ? (
+                    <a
+                      href={row.meetingVideoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 font-semibold truncate max-w-[320px]"
+                      title={row.meetingVideoUrl}
+                    >
+                      <ExternalLink size={12} />
+                      {row.meetingVideoUrl.replace(/^https?:\/\//, '').slice(0, 40)}…
+                    </a>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}
