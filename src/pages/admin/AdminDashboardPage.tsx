@@ -13,7 +13,8 @@ type CrmPermission =
   | 'all_data'
   | 'workflows'
   | 'leads'
-  | 'claim_leads';
+  | 'claim_leads'
+  | 'meeting_links';
 
 const PERMISSIONS: Array<{ key: CrmPermission; label: string; description: string }> = [
   { key: 'campaign_manager', label: 'Campaign Manager', description: 'UTM campaigns + bookings overview' },
@@ -24,6 +25,7 @@ const PERMISSIONS: Array<{ key: CrmPermission; label: string; description: strin
   { key: 'workflows', label: 'Workflows', description: 'Workflow builder + logs' },
   { key: 'leads', label: 'Leads', description: 'MQL / SQL / Converted management + revenue tracking' },
   { key: 'claim_leads', label: 'Claim Leads', description: 'BDA lead claiming and management' },
+  { key: 'meeting_links', label: 'Meeting Info', description: 'Meeting recordings and Google Drive video URLs' },
 ];
 
 type CrmUserRow = {

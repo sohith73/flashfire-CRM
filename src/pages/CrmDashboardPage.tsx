@@ -11,6 +11,7 @@ import {
   Megaphone,
   MessageCircle,
   UserRound,
+  Video,
   Workflow,
   Users,
   UserCheck,
@@ -29,10 +30,11 @@ import Workflows from '../components/Workflows';
 import LeadsView from '../components/LeadsView';
 import QualifiedLeadsView from '../components/QualifiedLeadsView';
 import ClaimLeadsView from '../components/ClaimLeadsView';
+import MeetingInfoView from '../components/MeetingInfoView';
 import '../index.css';
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads';
+type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'meeting_links';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -49,6 +51,7 @@ const TAB_CONFIG: Array<{
   { tab: 'leads', permission: 'leads', label: 'Leads', icon: Users },
   { tab: 'qualified_leads', permission: 'leads', label: 'Qualified Leads', icon: Filter },
   { tab: 'claim_leads', permission: 'claim_leads', label: 'Claim Your Leads', icon: UserCheck },
+  { tab: 'meeting_links', permission: 'meeting_links', label: 'Meeting Info', icon: Video },
 ];
 
 export default function CrmDashboardPage() {
@@ -287,6 +290,7 @@ export default function CrmDashboardPage() {
                   />
                 )}
                 {activeTab === 'claim_leads' && <ClaimLeadsView />}
+                {activeTab === 'meeting_links' && <MeetingInfoView />}
               </>
             )}
           </div>

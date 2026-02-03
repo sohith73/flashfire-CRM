@@ -22,6 +22,8 @@ import {
   AlertCircle,
   Info,
   Trash2,
+  FileText,
+  Workflow,
 } from 'lucide-react';
 import {
   format,
@@ -34,6 +36,7 @@ import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanCo
 import NotesModal from './NotesModal';
 import FollowUpModal, { type FollowUpData } from './FollowUpModal';
 import PlanDetailsModal, { type PlanDetailsData } from './PlanDetailsModal';
+import CustomWorkflowsModal from './CustomWorkflowsModal';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -74,6 +77,8 @@ interface Booking {
   clientEmail: string;
   clientPhone?: string;
   calendlyMeetLink?: string;
+  googleMeetUrl?: string;
+  meetingVideoUrl?: string;
   scheduledEventStartTime?: string;
   bookingCreatedAt: string;
   bookingStatus: BookingStatus;
@@ -137,6 +142,12 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [pendingStatusUpdate, setPendingStatusUpdate] = useState<{ bookingId: string; status: BookingStatus; plan?: PlanOption } | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'error' | 'info' }>>([]);
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  const [customWorkflowsForLead, setCustomWorkflowsForLead] = useState<{ bookingId: string; name: string } | null>(null);
+  const [isAttachWorkflowsModalOpen, setIsAttachWorkflowsModalOpen] = useState(false);
+  const [bulkCustomWorkflows, setBulkCustomWorkflows] = useState<Array<{ workflowId: string; name?: string }>>([]);
+  const [bulkSelectedWorkflowIds, setBulkSelectedWorkflowIds] = useState<Set<string>>(new Set());
+  const [bulkWorkflowsLoading, setBulkWorkflowsLoading] = useState(false);
+  const [bulkAttaching, setBulkAttaching] = useState(false);
   const statusDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -292,7 +303,8 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         source: booking.utmSource || 'direct',
         status: booking.bookingStatus,
         qualification: booking.qualification ?? (booking.bookingStatus === 'paid' ? 'Converted' : booking.bookingStatus === 'completed' ? 'SQL' : 'MQL'),
-        meetLink: booking.calendlyMeetLink && booking.calendlyMeetLink !== 'Not Provided' ? booking.calendlyMeetLink : undefined,
+        meetLink: booking.googleMeetUrl || (booking.calendlyMeetLink && booking.calendlyMeetLink !== 'Not Provided' ? booking.calendlyMeetLink : undefined),
+        videoUrl: booking.meetingVideoUrl || undefined,
         notes: booking.anythingToKnow,
         meetingNotes: booking.meetingNotes,
         paymentPlan: booking.paymentPlan,
@@ -414,32 +426,64 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
     });
   }, [selectedRows, filteredData, onOpenEmailCampaign]);
 
-  const handleBulkWhatsApp = useCallback(() => {
-    if (!onOpenWhatsAppCampaign) {
-      alert('WhatsApp campaign feature is not available');
-      return;
-    }
+  const selectedBookingIdsForBulk = useMemo(() => {
+    return filteredData
+      .filter((row) => selectedRows.has(row.id) && row.bookingId)
+      .map((row) => row.bookingId!);
+  }, [filteredData, selectedRows]);
 
-    const selectedPhones = filteredData
-      .filter((row) => selectedRows.has(row.id))
-      .map((row) => {
-        if (row.phone && row.phone !== 'Not Specified') {
-          return row.phone.replace(/[^\d+]/g, '');
+  useEffect(() => {
+    if (!isAttachWorkflowsModalOpen) return;
+    setBulkWorkflowsLoading(true);
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    fetch(`${API_BASE_URL}/api/workflows?isCustom=true`, { headers })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data)) {
+          setBulkCustomWorkflows(data.data.map((w: { workflowId: string; name?: string }) => ({ workflowId: w.workflowId, name: w.name })));
+        } else {
+          setBulkCustomWorkflows([]);
         }
-        return null;
       })
-      .filter((phone): phone is string => phone !== null && phone.length > 0);
+      .catch(() => setBulkCustomWorkflows([]))
+      .finally(() => setBulkWorkflowsLoading(false));
+    setBulkSelectedWorkflowIds(new Set());
+  }, [isAttachWorkflowsModalOpen, token]);
 
-    if (selectedPhones.length === 0) {
-      alert('Please select at least one row with a valid phone number to send WhatsApp messages');
-      return;
+  const handleBulkAttachWorkflows = async () => {
+    if (bulkSelectedWorkflowIds.size === 0 || selectedBookingIdsForBulk.length === 0) return;
+    setBulkAttaching(true);
+    const headers: HeadersInit = { 'Content-Type': 'application/json' };
+    if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    let attached = 0;
+    for (const bookingId of selectedBookingIdsForBulk) {
+      for (const workflowId of bulkSelectedWorkflowIds) {
+        try {
+          const res = await fetch(
+            `${API_BASE_URL}/api/campaign-bookings/${bookingId}/custom-workflows/${workflowId}/attach`,
+            { method: 'POST', headers }
+          );
+          const data = await res.json();
+          if (data.success) attached += 1;
+        } catch {
+          //
+        }
+      }
     }
+    setBulkAttaching(false);
+    showToast(`Attached workflows to ${selectedBookingIdsForBulk.length} lead(s). ${attached} attachment(s) made.`, 'success');
+    setIsAttachWorkflowsModalOpen(false);
+  };
 
-    onOpenWhatsAppCampaign({
-      mobileNumbers: selectedPhones,
-      reason: 'bulk_action',
+  const toggleBulkWorkflowSelection = (workflowId: string) => {
+    setBulkSelectedWorkflowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(workflowId)) next.delete(workflowId);
+      else next.add(workflowId);
+      return next;
     });
-  }, [selectedRows, filteredData, onOpenWhatsAppCampaign]);
+  };
 
   const bookingsById = useMemo(() => {
     const map = new Map<string, Booking>();
@@ -875,15 +919,13 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
             {selectedRows.size} row{selectedRows.size > 1 ? 's' : ''} selected
           </span>
           <div className="flex items-center gap-2">
-            {onOpenWhatsAppCampaign && (
-              <button
-                onClick={handleBulkWhatsApp}
-                className="inline-flex items-center gap-2 px-4 py-2 border border-teal-200 text-teal-700 rounded-lg bg-white hover:bg-teal-50 transition text-[11px] font-semibold"
-              >
-                <MessageCircle size={16} />
-                Send WhatsApp ({selectedRows.size})
-              </button>
-            )}
+            <button
+              onClick={() => setIsAttachWorkflowsModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-violet-200 text-violet-700 rounded-lg bg-white hover:bg-violet-50 transition text-[11px] font-semibold"
+            >
+              <Workflow size={16} />
+              Attach Workflows ({selectedRows.size})
+            </button>
             <button
               onClick={handleBulkEmail}
               className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-[11px] font-semibold"
@@ -1318,6 +1360,17 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
                             <ExternalLink size={9} />
                           </a>
                         )}
+                        {row.videoUrl && (
+                          <a
+                            href={row.videoUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View Recording"
+                            className="inline-flex items-center justify-center p-0.5 rounded border border-slate-200 bg-white hover:border-orange-400 hover:text-orange-600 transition flex-shrink-0"
+                          >
+                            <FileText size={9} />
+                          </a>
+                        )}
                         <button
                           onClick={() => {
                             setSelectedBookingForNotes({
@@ -1361,6 +1414,13 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
                             <MessageCircle size={9} />
                           </button>
                         )}
+                        <button
+                          onClick={() => setCustomWorkflowsForLead({ bookingId: row.bookingId!, name: row.name })}
+                          title="Custom Workflows"
+                          className="inline-flex items-center justify-center p-0.5 rounded border border-violet-200 text-violet-700 bg-white hover:bg-violet-50 transition flex-shrink-0"
+                        >
+                          <Workflow size={9} />
+                        </button>
                         <button
                           onClick={() => handleDeleteClick(row)}
                           title="Delete Lead"
@@ -1516,6 +1576,82 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         currentPlan={selectedBookingForPlanDetails?.booking.paymentPlan}
         defaultDays={7}
       />
+
+      {customWorkflowsForLead && (
+        <CustomWorkflowsModal
+          isOpen={!!customWorkflowsForLead}
+          onClose={() => setCustomWorkflowsForLead(null)}
+          bookingId={customWorkflowsForLead.bookingId}
+          clientName={customWorkflowsForLead.name}
+          onSuccess={() => {
+            showToast('Custom workflow updated', 'success');
+          }}
+        />
+      )}
+
+      {isAttachWorkflowsModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => !bulkAttaching && setIsAttachWorkflowsModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Workflow size={20} className="text-violet-500" />
+                <h3 className="text-lg font-bold text-slate-900">Attach Workflows</h3>
+              </div>
+              <button
+                onClick={() => !bulkAttaching && setIsAttachWorkflowsModalOpen(false)}
+                disabled={bulkAttaching}
+                className="p-2 hover:bg-slate-200 rounded-lg transition text-slate-500 disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-4">
+                Attach custom workflows to <span className="font-semibold">{selectedBookingIdsForBulk.length}</span> selected lead(s). Select one or more workflows below.
+              </p>
+              {bulkWorkflowsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="animate-spin text-orange-500" size={28} />
+                </div>
+              ) : bulkCustomWorkflows.length === 0 ? (
+                <p className="text-sm text-slate-500 py-4">No custom workflows found. Create one from a lead’s row first.</p>
+              ) : (
+                <ul className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                  {bulkCustomWorkflows.map((w) => (
+                    <li key={w.workflowId} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+                      <button
+                        type="button"
+                        onClick={() => toggleBulkWorkflowSelection(w.workflowId)}
+                        className={`flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition ${bulkSelectedWorkflowIds.has(w.workflowId) ? 'bg-violet-500 border-violet-500 text-white' : 'border-slate-300 bg-white'}`}
+                      >
+                        {bulkSelectedWorkflowIds.has(w.workflowId) ? <CheckSquare size={14} /> : null}
+                      </button>
+                      <span className="font-medium text-slate-800 truncate flex-1">{w.name || w.workflowId}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => !bulkAttaching && setIsAttachWorkflowsModalOpen(false)}
+                  disabled={bulkAttaching}
+                  className="flex-1 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkAttachWorkflows}
+                  disabled={bulkAttaching || bulkSelectedWorkflowIds.size === 0 || bulkCustomWorkflows.length === 0}
+                  className="flex-1 py-2.5 bg-violet-500 text-white rounded-lg font-semibold hover:bg-violet-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {bulkAttaching ? <Loader2 size={18} className="animate-spin" /> : <Workflow size={18} />}
+                  Attach to {selectedBookingIdsForBulk.length} lead(s)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {isDeleteModalOpen && selectedLeadForDelete && (

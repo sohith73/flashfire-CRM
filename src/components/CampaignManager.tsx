@@ -32,6 +32,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfire
 
 export default function CampaignManager() {
   const [campaignName, setCampaignName] = useState('');
+  const [exactUtmSource, setExactUtmSource] = useState('');
   const [utmMedium, setUtmMedium] = useState('campaign');
   const [utmCampaign, setUtmCampaign] = useState('');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -165,23 +166,29 @@ export default function CampaignManager() {
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!campaignName.trim()) {
-      alert('Please enter a campaign name');
+    const nameTrim = campaignName.trim();
+    const exactTrim = exactUtmSource.trim();
+    if (!nameTrim && !exactTrim) {
+      alert('Please enter a campaign name or exact UTM source');
       return;
     }
 
     setLoading(true);
     try {
+      const body: Record<string, string | null> = {
+        campaignName: nameTrim || exactTrim,
+        utmMedium,
+        utmCampaign: utmCampaign || null,
+      };
+      if (exactTrim) {
+        body.utmSource = exactTrim.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/gi, '');
+      }
       const response = await fetch(`${API_BASE_URL}/api/campaigns`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          campaignName,
-          utmMedium,
-          utmCampaign: utmCampaign || null,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
@@ -189,6 +196,7 @@ export default function CampaignManager() {
       if (data.success) {
         alert('Campaign created successfully!');
         setCampaignName('');
+        setExactUtmSource('');
         setUtmMedium('campaign');
         setUtmCampaign('');
         fetchCampaigns();
@@ -278,18 +286,32 @@ export default function CampaignManager() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="campaignName" className="block text-sm font-semibold text-gray-700 mb-2">
-                  UTM Source *
+                  Campaign name *
                 </label>
                 <input
                   type="text"
                   id="campaignName"
                   value={campaignName}
                   onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder="e.g., name"
+                  placeholder="e.g., my campaign"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                  required
                 />
-                <p className="text-xs text-gray-500 mt-1">This will be your campaign identifier</p>
+                <p className="text-xs text-gray-500 mt-1">Display name for the campaign</p>
+              </div>
+
+              <div>
+                <label htmlFor="exactUtmSource" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Exact UTM source (optional)
+                </label>
+                <input
+                  type="text"
+                  id="exactUtmSource"
+                  value={exactUtmSource}
+                  onChange={(e) => setExactUtmSource(e.target.value)}
+                  placeholder="e.g., whatsapp, instagram"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                />
+                <p className="text-xs text-gray-500 mt-1">Use for exact links like ?utm_source=whatsapp</p>
               </div>
 
               <div>
@@ -302,6 +324,20 @@ export default function CampaignManager() {
                   value={utmMedium}
                   onChange={(e) => setUtmMedium(e.target.value)}
                   placeholder="e.g., social, email, cpc"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="utmCampaign" className="block text-sm font-semibold text-gray-700 mb-2">
+                  UTM Campaign
+                </label>
+                <input
+                  type="text"
+                  id="utmCampaign"
+                  value={utmCampaign}
+                  onChange={(e) => setUtmCampaign(e.target.value)}
+                  placeholder="e.g., campaign name"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
                 />
               </div>
