@@ -222,7 +222,7 @@ const highlightVariables = (text: string, variables: string[]): ReactElement[] =
   
   return parts.map((part, i) => 
     part.isVariable ? (
-      <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold text-xs mx-0.5">
+      <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-semibold text-xs mx-0.5 border border-blue-200">
         {part.text}
       </span>
     ) : (
@@ -258,7 +258,7 @@ const TemplatePreview = ({ templateName, variables }: { templateName?: string; v
           return (
             <span
               key={idx}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-semibold text-xs"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200"
               title={description}
             >
               <span>{variable}</span>
