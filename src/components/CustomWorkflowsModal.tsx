@@ -7,8 +7,6 @@ import {
   Play,
   Workflow,
   ChevronRight,
-  Mail,
-  MessageCircle,
   Info,
 } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
