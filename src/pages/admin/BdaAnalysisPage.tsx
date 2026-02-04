@@ -81,7 +81,7 @@ export default function BdaAnalysisPage() {
   const [planFilter, setPlanFilter] = useState<PlanName | 'all'>('all');
   const [bdaEmailFilter, setBdaEmailFilter] = useState('');
   const [commissionConfigs, setCommissionConfigs] = useState<
-    Array<{ planName: PlanName; basePriceUsd: number; currency: string; incentivePerLeadInr: number }>
+    Array<{ planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }>
   >([]);
   const [commissionLoading, setCommissionLoading] = useState(false);
   const [commissionSaving, setCommissionSaving] = useState(false);
@@ -154,14 +154,26 @@ export default function BdaAnalysisPage() {
       if (!body.success || !Array.isArray(body.configs)) {
         throw new Error(body.message || 'Failed to load commission config');
       }
-      setCommissionConfigs(
-        body.configs.map((c: any) => ({
-          planName: c.planName as PlanName,
-          basePriceUsd: Number(c.basePriceUsd) ?? 0,
-          currency: c.currency || 'USD',
-          incentivePerLeadInr: Number(c.incentivePerLeadInr) ?? 0
-        }))
-      );
+      const mappedConfigs = body.configs.map((c: any) => ({
+        planName: c.planName as PlanName,
+        basePrice: Number(c.basePrice ?? c.basePriceUsd) ?? 0, // Support both basePrice and basePriceUsd for backward compatibility
+        currency: c.currency || 'USD',
+        incentivePerLeadInr: Number(c.incentivePerLeadInr) ?? 0
+      }));
+
+      // If no CAD configs exist, add default CAD configurations
+      const hasCadConfigs = mappedConfigs.some((c: { planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }) => c.currency === 'CAD');
+      if (!hasCadConfigs) {
+        const cadDefaults: Array<{ planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }> = [
+          { planName: 'PRIME', basePrice: 139, currency: 'CAD', incentivePerLeadInr: 400 },
+          { planName: 'IGNITE', basePrice: 239, currency: 'CAD', incentivePerLeadInr: 600 },
+          { planName: 'PROFESSIONAL', basePrice: 409, currency: 'CAD', incentivePerLeadInr: 1200 },
+          { planName: 'EXECUTIVE', basePrice: 799, currency: 'CAD', incentivePerLeadInr: 2200 },
+        ];
+        mappedConfigs.push(...cadDefaults);
+      }
+
+      setCommissionConfigs(mappedConfigs);
     } catch (err) {
       setCommissionError(err instanceof Error ? err.message : 'Failed to load commission config');
     } finally {
@@ -183,7 +195,8 @@ export default function BdaAnalysisPage() {
         body: JSON.stringify({
           configs: commissionConfigs.map((c) => ({
             planName: c.planName,
-            basePriceUsd: c.basePriceUsd,
+            basePrice: c.basePrice,
+            currency: c.currency,
             incentivePerLeadInr: c.incentivePerLeadInr
           }))
         })
@@ -351,6 +364,35 @@ export default function BdaAnalysisPage() {
     }
   };
 
+  const getIncentiveForLead = (lead: Lead): number => {
+    if (!lead.paymentPlan || !lead.paymentPlan.name || lead.bookingStatus !== 'paid') {
+      return 0;
+    }
+    const amountPaid = lead.paymentPlan.price ?? 0;
+    if (amountPaid <= 0) return 0;
+    
+    // Find config that matches both plan name AND currency
+    // This allows different base prices for the same plan in different currencies
+    // Example: EXECUTIVE USD = 599, EXECUTIVE CAD = 699
+    const paymentCurrency = lead.paymentPlan.currency || 'USD';
+    const config = commissionConfigs.find(
+      c => c.planName === lead.paymentPlan?.name && c.currency === paymentCurrency
+    );
+    
+    // Fallback: if no exact currency match, try to find by plan name only (for backward compatibility)
+    const fallbackConfig = config || commissionConfigs.find(c => c.planName === lead.paymentPlan?.name);
+    if (!fallbackConfig) return 0;
+    
+    // Compare amounts in the same currency (no conversion needed)
+    // Example: 699 CAD payment vs 699 CAD base price = 100% incentive
+    // Example: 500 CAD payment vs 699 CAD base price = 71.5% incentive
+    const basePrice = fallbackConfig.basePrice > 0 ? fallbackConfig.basePrice : 1;
+    const paymentRatio = Math.min(1, amountPaid / basePrice);
+    
+    // Return incentive in INR (same regardless of payment currency)
+    return fallbackConfig.incentivePerLeadInr * paymentRatio;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -483,36 +525,77 @@ export default function BdaAnalysisPage() {
           </div>
         ) : (
           <div className="space-y-4">
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Note:</strong> Configure base prices for each currency. When a BDA enters a payment, the system will use the base price matching the payment currency to calculate prorated incentives.
+              </p>
+            </div>
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-2 text-left font-semibold text-slate-700">Plan</th>
-                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Base Price (USD)</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Currency</th>
+                  <th className="px-4 py-2 text-left font-semibold text-slate-700">Base Price</th>
                   <th className="px-4 py-2 text-left font-semibold text-slate-700">Incentive / Lead (INR)</th>
                 </tr>
               </thead>
               <tbody>
-                {commissionConfigs.map((cfg) => (
-                  <tr key={cfg.planName} className="border-b border-slate-100">
+                {commissionConfigs
+                  .sort((a, b) => {
+                    // Sort by plan name first, then by currency (USD before CAD)
+                    if (a.planName !== b.planName) {
+                      const planOrder = ['PRIME', 'IGNITE', 'PROFESSIONAL', 'EXECUTIVE'];
+                      return planOrder.indexOf(a.planName) - planOrder.indexOf(b.planName);
+                    }
+                    const currencyOrder = ['USD', 'CAD', 'INR', 'EUR', 'GBP'];
+                    return currencyOrder.indexOf(a.currency) - currencyOrder.indexOf(b.currency);
+                  })
+                  .map((cfg, index) => (
+                  <tr 
+                    key={`${cfg.planName}-${cfg.currency}-${index}`} 
+                    className={`border-b border-slate-100 ${cfg.currency === 'CAD' ? 'bg-blue-50/30' : ''}`}
+                  >
                     <td className="px-4 py-2 font-semibold text-slate-900">{cfg.planName}</td>
+                    <td className="px-4 py-2">
+                      <select
+                        value={cfg.currency}
+                        onChange={(e) => {
+                          setCommissionConfigs((prev) =>
+                            prev.map((p, idx) =>
+                              idx === index
+                                ? { ...p, currency: e.target.value }
+                                : p
+                            )
+                          );
+                        }}
+                        className="w-24 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                      >
+                        <option value="USD">USD</option>
+                        <option value="CAD">CAD</option>
+                        <option value="INR">INR</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                      </select>
+                    </td>
                     <td className="px-4 py-2">
                       <input
                         type="number"
                         min={0}
                         step={1}
-                        value={Number.isNaN(cfg.basePriceUsd) ? '' : cfg.basePriceUsd}
+                        value={Number.isNaN(cfg.basePrice) ? '' : cfg.basePrice}
                         onChange={(e) => {
                           const value = parseFloat(e.target.value);
                           setCommissionConfigs((prev) =>
-                            prev.map((p) =>
-                              p.planName === cfg.planName
-                                ? { ...p, basePriceUsd: Number.isNaN(value) ? 0 : value }
+                            prev.map((p, idx) =>
+                              idx === index
+                                ? { ...p, basePrice: Number.isNaN(value) ? 0 : value }
                                 : p
                             )
                           );
                         }}
                         className="w-28 border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        placeholder={`e.g., ${cfg.currency === 'CAD' ? '699' : cfg.currency === 'USD' ? '599' : '0'}`}
                       />
                     </td>
                     <td className="px-4 py-2">
@@ -524,8 +607,8 @@ export default function BdaAnalysisPage() {
                         onChange={(e) => {
                           const value = parseFloat(e.target.value);
                           setCommissionConfigs((prev) =>
-                            prev.map((p) =>
-                              p.planName === cfg.planName
+                            prev.map((p, idx) =>
+                              idx === index
                                 ? { ...p, incentivePerLeadInr: Number.isNaN(value) ? 0 : value }
                                 : p
                             )
@@ -539,7 +622,28 @@ export default function BdaAnalysisPage() {
               </tbody>
             </table>
             </div>
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  // Add a new config row (default to first plan and USD)
+                  const defaultPlan = commissionConfigs.length > 0 
+                    ? commissionConfigs[0].planName 
+                    : 'EXECUTIVE' as PlanName;
+                  setCommissionConfigs([
+                    ...commissionConfigs,
+                    {
+                      planName: defaultPlan,
+                      currency: 'USD',
+                      basePrice: 0,
+                      incentivePerLeadInr: 0
+                    }
+                  ]);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
+              >
+                + Add Currency Config
+              </button>
               <button
                 type="button"
                 onClick={handleSaveCommission}
@@ -737,8 +841,8 @@ export default function BdaAnalysisPage() {
                       <div className="text-sm text-slate-600 mb-1">Incentive (₹)</div>
                       <div className="text-2xl font-bold text-slate-900">
                         ₹{detailData.leads
-                          .filter(l => l.bookingStatus === 'paid' && l.paymentPlan?.name)
-                          .reduce((sum, l) => sum + (commissionConfigs.find(c => c.planName === l.paymentPlan?.name)?.incentivePerLeadInr ?? 0), 0)
+                          .filter(l => l.bookingStatus === 'paid')
+                          .reduce((sum, l) => sum + getIncentiveForLead(l), 0)
                           .toLocaleString('en-IN')}
                       </div>
                     </div>
@@ -799,6 +903,12 @@ export default function BdaAnalysisPage() {
                                   <span>
                                     {lead.paymentPlan.displayPrice || `$${lead.paymentPlan.price}`} - {lead.paymentPlan.name}
                                   </span>
+                                </div>
+                              )}
+                              {lead.bookingStatus === 'paid' && lead.paymentPlan && (
+                                <div className="flex items-center gap-2 text-emerald-700 font-semibold">
+                                  <DollarSign size={16} />
+                                  <span>Incentive (INR): ₹{getIncentiveForLead(lead).toFixed(0)}</span>
                                 </div>
                               )}
                             </div>
