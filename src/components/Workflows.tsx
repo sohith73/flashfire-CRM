@@ -72,7 +72,7 @@ interface WorkflowStep {
 interface Workflow {
   _id?: string;
   workflowId: string;
-  triggerAction: 'no-show' | 'complete' | 'cancel' | 're-schedule' | 'paid';
+  triggerAction: 'no-show' | 'complete' | 'cancel' | 're-schedule' | 'paid' | 'custom';
   steps: WorkflowStep[];
   isActive: boolean;
   name?: string;
