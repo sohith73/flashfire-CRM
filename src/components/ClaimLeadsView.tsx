@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Search, Save, CheckCircle2, AlertCircle, X, Calendar, Phone, Mail, User, DollarSign, UserCheck, List, BarChart3, Filter } from 'lucide-react';
+import { Loader2, Search, Save, CheckCircle2, AlertCircle, X, Calendar, Phone, Mail, User, DollarSign, UserCheck, List, BarChart3, Filter, UserPlus, Trash2 } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 import { usePlanConfig, type PlanName } from '../context/PlanConfigContext';
 import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
@@ -8,6 +8,8 @@ import BdaPerformanceView from './BdaPerformanceView';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
 type ActiveTab = 'claim' | 'my_leads' | 'bda_performance';
+
+export type PaymentBreakdownLine = { planName: PlanName; amount: number; currency: string };
 
 interface Lead {
   bookingId: string;
@@ -22,6 +24,8 @@ interface Lead {
     currency?: string;
     displayPrice?: string;
   };
+  /** When set, payment is split across primary + referrals; incentive is sum per line. */
+  paymentBreakdown?: PaymentBreakdownLine[];
   meetingNotes?: string;
   anythingToKnow?: string;
   claimedBy?: {
@@ -55,6 +59,9 @@ export default function ClaimLeadsView() {
   const [myLeadsToDate, setMyLeadsToDate] = useState<string>('');
   const [myLeadsStatusFilter, setMyLeadsStatusFilter] = useState<'all' | 'paid' | 'scheduled' | 'completed'>('all');
   const [myLeadsPlanFilter, setMyLeadsPlanFilter] = useState<PlanName | 'all'>('all');
+
+  /** Referral payment lines (plan + amount). Primary is formData.paymentPlan; these are additional. */
+  const [referralPayments, setReferralPayments] = useState<PaymentBreakdownLine[]>([]);
   
   // Commission configs for multi-currency support
   const [commissionConfigs, setCommissionConfigs] = useState<
@@ -128,6 +135,28 @@ export default function ClaimLeadsView() {
     return config.incentivePerLeadInr * paymentRatio;
   }, [incentiveConfig, commissionConfigs]);
 
+  /** Total amount (primary + referrals) and total incentive in INR. */
+  const primaryAmount = formData.paymentPlan?.price ?? 0;
+  const referralTotal = referralPayments.reduce((s, r) => s + (r.amount || 0), 0);
+  const totalAmountPaid = primaryAmount + referralTotal;
+  const primaryIncentive = getIncentiveProrated(formData.paymentPlan?.name, primaryAmount, formData.paymentPlan?.currency);
+  const referralIncentives = referralPayments.map(r => getIncentiveProrated(r.planName, r.amount, r.currency));
+  const totalIncentiveInr = primaryIncentive + referralIncentives.reduce((s, i) => s + i, 0);
+
+  /** Total incentive for a lead (from paymentBreakdown or single paymentPlan). */
+  const getTotalIncentiveForLead = useCallback((item: Lead): number => {
+    if (item.paymentBreakdown && item.paymentBreakdown.length > 0) {
+      return item.paymentBreakdown.reduce(
+        (sum, line) => sum + getIncentiveProrated(line.planName, line.amount, line.currency),
+        0
+      );
+    }
+    if (item.paymentPlan?.name && item.paymentPlan.price != null) {
+      return getIncentiveProrated(item.paymentPlan.name, item.paymentPlan.price, item.paymentPlan.currency);
+    }
+    return 0;
+  }, [getIncentiveProrated]);
+
   const fetchMyLeads = useCallback(async () => {
     if (!token) return;
     setMyLeadsLoading(true);
@@ -178,17 +207,24 @@ export default function ClaimLeadsView() {
           dateValue = '';
         }
       }
-      
+      const breakdown = lead.paymentBreakdown && lead.paymentBreakdown.length > 0
+        ? lead.paymentBreakdown
+        : null;
+      const primary = breakdown
+        ? { name: breakdown[0].planName, price: breakdown[0].amount, currency: breakdown[0].currency, displayPrice: `${breakdown[0].currency === 'CAD' ? 'CA$' : '$'}${breakdown[0].amount}` }
+        : lead.paymentPlan || undefined;
       setFormData({
         clientName: lead.clientName,
         clientPhone: lead.clientPhone || '',
         scheduledEventStartTime: dateValue,
-        paymentPlan: lead.paymentPlan || undefined,
+        paymentPlan: primary,
         meetingNotes: lead.meetingNotes || '',
         anythingToKnow: lead.anythingToKnow || '',
       });
+      setReferralPayments(breakdown ? breakdown.slice(1) : []);
     } else {
       setFormData({});
+      setReferralPayments([]);
     }
   }, [lead]);
 
@@ -228,26 +264,48 @@ export default function ClaimLeadsView() {
   const handleClaim = async () => {
     if (!lead) return;
 
+    const hasReferrals = referralPayments.some(r => r.amount > 0);
+    const primaryAmt = formData.paymentPlan?.price ?? 0;
+    if (primaryAmt <= 0 && !hasReferrals) {
+      setError('Amount paid by client must be greater than 0 (or add referrals with amounts)');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const body: { paymentPlan?: typeof formData.paymentPlan } = {};
-      if (formData.paymentPlan?.name && formData.paymentPlan.price !== undefined) {
-        const amt = formData.paymentPlan.price;
-        if (amt <= 0) {
-          setError('Amount paid by client must be greater than 0');
-          setLoading(false);
-          return;
-        }
-        body.paymentPlan = {
-          name: formData.paymentPlan.name,
-          price: amt,
-          currency: formData.paymentPlan.currency || 'USD',
-          displayPrice: formData.paymentPlan.displayPrice || `$${amt}`,
-        };
+      const currency = formData.paymentPlan?.currency || 'USD';
+      const allLines: PaymentBreakdownLine[] = [];
+      if (formData.paymentPlan?.name && primaryAmt > 0) {
+        allLines.push({
+          planName: formData.paymentPlan.name,
+          amount: primaryAmt,
+          currency,
+        });
       }
+      referralPayments.forEach(r => {
+        if (r.amount > 0 && r.planName) {
+          allLines.push({ planName: r.planName, amount: r.amount, currency: r.currency || currency });
+        }
+      });
+      const totalAmt = allLines.reduce((s, l) => s + l.amount, 0);
+      if (totalAmt <= 0) {
+        setError('Total amount (primary + referrals) must be greater than 0');
+        setLoading(false);
+        return;
+      }
+
+      const body: { paymentPlan?: typeof formData.paymentPlan; paymentBreakdown?: PaymentBreakdownLine[] } = {};
+      body.paymentPlan = {
+        name: formData.paymentPlan?.name || allLines[0]?.planName || 'PRIME',
+        price: totalAmt,
+        currency,
+        displayPrice: `${currency === 'CAD' ? 'CA$' : '$'}${totalAmt}`,
+      };
+      if (allLines.length > 0) body.paymentBreakdown = allLines;
+
       const response = await fetch(`${API_BASE_URL}/api/bda/claim-lead/${lead.bookingId}`, {
         method: 'POST',
         headers: {
@@ -289,11 +347,26 @@ export default function ClaimLeadsView() {
     setSuccess(null);
 
     try {
+      const currency = formData.paymentPlan?.currency || 'USD';
+      const allLines: PaymentBreakdownLine[] = [];
+      if (formData.paymentPlan?.name && (formData.paymentPlan?.price ?? 0) > 0) {
+        allLines.push({
+          planName: formData.paymentPlan.name,
+          amount: formData.paymentPlan.price ?? 0,
+          currency,
+        });
+      }
+      referralPayments.forEach(r => {
+        if (r.amount > 0 && r.planName) {
+          allLines.push({ planName: r.planName, amount: r.amount, currency: r.currency || currency });
+        }
+      });
+      const totalAmt = allLines.length > 0 ? allLines.reduce((s, l) => s + l.amount, 0) : (formData.paymentPlan?.price ?? 0);
       const planPayload = formData.paymentPlan ? {
         name: formData.paymentPlan.name,
-        price: formData.paymentPlan.price,
-        currency: formData.paymentPlan.currency || 'USD',
-        displayPrice: formData.paymentPlan.displayPrice || `$${formData.paymentPlan.price}`,
+        price: totalAmt,
+        currency,
+        displayPrice: formData.paymentPlan.displayPrice || `${currency === 'CAD' ? 'CA$' : '$'}${totalAmt}`,
       } : undefined;
 
       const requestBody: any = {
@@ -302,6 +375,9 @@ export default function ClaimLeadsView() {
 
       if (planPayload) {
         requestBody.plan = planPayload;
+      }
+      if (newStatus === 'paid' && allLines.length > 0) {
+        requestBody.paymentBreakdown = allLines;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/${lead.bookingId}/status`, {
@@ -333,8 +409,10 @@ export default function ClaimLeadsView() {
 
   const handleSave = async () => {
     if (!lead) return;
-    if (formData.paymentPlan?.name && (formData.paymentPlan.price == null || formData.paymentPlan.price <= 0)) {
-      setError('Amount paid by client must be greater than 0');
+    const hasReferrals = referralPayments.some(r => r.amount > 0);
+    const primaryAmt = formData.paymentPlan?.price ?? 0;
+    if (primaryAmt <= 0 && !hasReferrals && formData.paymentPlan?.name) {
+      setError('Amount paid by client must be greater than 0 (or add referrals with amounts)');
       return;
     }
 
@@ -343,13 +421,31 @@ export default function ClaimLeadsView() {
     setSuccess(null);
 
     try {
+      const currency = formData.paymentPlan?.currency || 'USD';
+      const allLines: PaymentBreakdownLine[] = [];
+      if (formData.paymentPlan?.name && primaryAmt > 0) {
+        allLines.push({ planName: formData.paymentPlan.name, amount: primaryAmt, currency });
+      }
+      referralPayments.forEach(r => {
+        if (r.amount > 0 && r.planName) {
+          allLines.push({ planName: r.planName, amount: r.amount, currency: r.currency || currency });
+        }
+      });
+      const totalAmt = allLines.length > 0 ? allLines.reduce((s, l) => s + l.amount, 0) : primaryAmt;
+      const payload: Partial<Lead> = {
+        ...formData,
+        paymentPlan: formData.paymentPlan
+          ? { ...formData.paymentPlan, price: totalAmt, displayPrice: `${currency === 'CAD' ? 'CA$' : '$'}${totalAmt}` }
+          : formData.paymentPlan,
+        paymentBreakdown: allLines.length > 0 ? allLines : undefined,
+      };
       const response = await fetch(`${API_BASE_URL}/api/bda/update-lead/${lead.bookingId}`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -526,6 +622,14 @@ export default function ClaimLeadsView() {
                         Claim This Lead
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setReferralPayments(r => [...r, { planName: 'PRIME', amount: 0, currency: formData.paymentPlan?.currency || 'USD' }])}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition font-semibold"
+                    >
+                      <UserPlus size={18} />
+                      + Referral
+                    </button>
                     {isClaimed && (
                       <div className="text-sm">
                         <p className="text-slate-600">Claimed by:</p>
@@ -722,6 +826,61 @@ export default function ClaimLeadsView() {
                           </label>
                           <div className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-emerald-700 font-semibold">
                             ₹{getIncentiveProrated(formData.paymentPlan.name, formData.paymentPlan.price ?? 0, formData.paymentPlan.currency).toFixed(0)}
+                          </div>
+                        </div>
+                      )}
+
+                      {referralPayments.length > 0 && (
+                        <div className="md:col-span-2 space-y-3">
+                          <label className="block text-sm font-semibold text-slate-700">Referrals</label>
+                          {referralPayments.map((refLine, idx) => (
+                            <div key={idx} className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                              <select
+                                value={refLine.planName}
+                                onChange={(e) => {
+                                  const v = e.target.value as PlanName;
+                                  setReferralPayments(r => r.map((x, i) => i === idx ? { ...x, planName: v } : x));
+                                }}
+                                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white min-w-[140px]"
+                              >
+                                {planOptions.map((p) => (
+                                  <option key={p.key} value={p.key}>{p.label} ({p.displayPrice})</option>
+                                ))}
+                              </select>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={refLine.amount || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value);
+                                  if (!isNaN(val) && val >= 0) {
+                                    setReferralPayments(r => r.map((x, i) => i === idx ? { ...x, amount: val } : x));
+                                  }
+                                }}
+                                placeholder="Amount"
+                                className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-24"
+                              />
+                              <span className="text-sm text-emerald-700 font-semibold">
+                                ₹{getIncentiveProrated(refLine.planName, refLine.amount, refLine.currency).toFixed(0)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setReferralPayments(r => r.filter((_, i) => i !== idx))}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                title="Remove referral"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-slate-200">
+                            <span className="text-sm font-semibold text-slate-700">
+                              Total amount paid: {formData.paymentPlan?.currency === 'CAD' ? 'CA$' : '$'}{totalAmountPaid.toFixed(0)}
+                            </span>
+                            <span className="text-sm font-semibold text-emerald-700">
+                              Total incentive (INR): ₹{totalIncentiveInr.toFixed(0)}
+                            </span>
                           </div>
                         </div>
                       )}
@@ -964,9 +1123,14 @@ export default function ClaimLeadsView() {
                                   {format(parseISO(item.scheduledEventStartTime), 'MMM d, yyyy • h:mm a')}
                                 </p>
                               )}
-                              {item.paymentPlan && (
+                              {(item.paymentPlan || (item.paymentBreakdown && item.paymentBreakdown.length > 0)) && (
                                 <p><DollarSign size={14} className="inline mr-1" />
-                                  {item.paymentPlan.name} - {item.paymentPlan.displayPrice} paid
+                                  {item.paymentBreakdown && item.paymentBreakdown.length > 1
+                                    ? `Total ${item.paymentPlan?.displayPrice ?? `$${item.paymentBreakdown.reduce((s, l) => s + l.amount, 0)}`} paid`
+                                    : `${item.paymentPlan?.name} - ${item.paymentPlan?.displayPrice} paid`}
+                                  {item.paymentBreakdown && item.paymentBreakdown.length > 1 && (
+                                    <span className="text-slate-500 ml-1">+{item.paymentBreakdown.length - 1} referral</span>
+                                  )}
                                 </p>
                               )}
                               {item.bdaApprovalStatus && (
@@ -982,9 +1146,9 @@ export default function ClaimLeadsView() {
                                   Approval: {item.bdaApprovalStatus}
                                 </p>
                               )}
-                              {item.bookingStatus === 'paid' && item.paymentPlan && item.paymentPlan.price && (
+                              {item.bookingStatus === 'paid' && (item.paymentPlan || (item.paymentBreakdown && item.paymentBreakdown.length > 0)) && (
                                 <p className="text-emerald-700">
-                                  Incentive: ₹{getIncentiveProrated(item.paymentPlan.name, item.paymentPlan.price, item.paymentPlan.currency).toFixed(0)}
+                                  Incentive: ₹{getTotalIncentiveForLead(item).toFixed(0)}
                                 </p>
                               )}
                             </div>
@@ -1038,11 +1202,20 @@ export default function ClaimLeadsView() {
               <p className="text-slate-600 mb-4">
                 Are you sure you want to mark <span className="font-semibold">{lead?.clientName || 'this client'}</span> as paid?
               </p>
-              {formData.paymentPlan && (
+              {(formData.paymentPlan || referralPayments.some(r => r.amount > 0)) && (
                 <div className="bg-slate-50 rounded-lg p-4 mb-4">
-                  <div className="text-sm text-slate-600 mb-1">Plan: <span className="font-semibold text-slate-900">{formData.paymentPlan.name}</span></div>
-                  <div className="text-sm text-slate-600 mb-1">Amount paid by client: <span className="font-semibold text-emerald-600">{formData.paymentPlan.displayPrice || `$${formData.paymentPlan.price}`}</span></div>
-                  <div className="text-sm text-slate-600">Your incentive (prorated): <span className="font-semibold text-emerald-700">₹{getIncentiveProrated(formData.paymentPlan.name, formData.paymentPlan.price ?? 0, formData.paymentPlan.currency).toFixed(0)}</span></div>
+                  {referralPayments.filter(r => r.amount > 0).length === 0 ? (
+                    <>
+                      <div className="text-sm text-slate-600 mb-1">Plan: <span className="font-semibold text-slate-900">{formData.paymentPlan?.name}</span></div>
+                      <div className="text-sm text-slate-600 mb-1">Amount paid by client: <span className="font-semibold text-emerald-600">{formData.paymentPlan?.displayPrice || `$${formData.paymentPlan?.price}`}</span></div>
+                      <div className="text-sm text-slate-600">Your incentive (prorated): <span className="font-semibold text-emerald-700">₹{getIncentiveProrated(formData.paymentPlan?.name, formData.paymentPlan?.price ?? 0, formData.paymentPlan?.currency).toFixed(0)}</span></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm text-slate-600 mb-1">Total amount paid by client: <span className="font-semibold text-emerald-600">{formData.paymentPlan?.currency === 'CAD' ? 'CA$' : '$'}{totalAmountPaid.toFixed(0)}</span></div>
+                      <div className="text-sm text-slate-600">Total incentive (INR): <span className="font-semibold text-emerald-700">₹{totalIncentiveInr.toFixed(0)}</span> <span className="text-slate-500">({1 + referralPayments.filter(r => r.amount > 0).length} payments)</span></div>
+                    </>
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-3">
