@@ -46,6 +46,8 @@ interface Lead {
     currency: string;
     displayPrice: string;
   };
+  /** When set, payment is split across primary + referrals; incentive is sum per line. */
+  paymentBreakdown?: Array<{ planName: string; amount: number; currency: string }>;
   meetingNotes?: string;
   anythingToKnow?: string;
   claimedBy?: {
@@ -411,36 +413,52 @@ export default function BdaAnalysisPage() {
     }
   };
 
+  /** Incentive for a single line (plan + amount). */
+  const getIncentiveForLine = (planName: string, amount: number, currency: string): number => {
+    if (amount <= 0) return 0;
+    const paymentCurrency = currency || 'USD';
+    const config = commissionConfigs.find(
+      (c) => c.planName === planName && c.currency === paymentCurrency
+    );
+    const fallbackConfig = config || commissionConfigs.find((c) => c.planName === planName);
+    if (!fallbackConfig) return 0;
+    const basePrice = fallbackConfig.basePrice > 0 ? fallbackConfig.basePrice : 1;
+    const paymentRatio = Math.min(1, amount / basePrice);
+    return fallbackConfig.incentivePerLeadInr * paymentRatio;
+  };
+
   const getIncentiveForLead = (lead: Lead): number => {
     if (lead.bdaApprovalStatus && lead.bdaApprovalStatus !== 'approved') {
       return 0;
     }
-    if (!lead.paymentPlan || !lead.paymentPlan.name || lead.bookingStatus !== 'paid') {
-      return 0;
+    if (lead.bookingStatus !== 'paid') return 0;
+
+    if (lead.paymentBreakdown && lead.paymentBreakdown.length > 0) {
+      return lead.paymentBreakdown.reduce(
+        (sum, line) => sum + getIncentiveForLine(line.planName, line.amount, line.currency || 'USD'),
+        0
+      );
     }
+
+    if (!lead.paymentPlan || !lead.paymentPlan.name) return 0;
     const amountPaid = lead.paymentPlan.price ?? 0;
     if (amountPaid <= 0) return 0;
-    
-    // Find config that matches both plan name AND currency
-    // This allows different base prices for the same plan in different currencies
-    // Example: EXECUTIVE USD = 599, EXECUTIVE CAD = 699
     const paymentCurrency = lead.paymentPlan.currency || 'USD';
     const config = commissionConfigs.find(
       c => c.planName === lead.paymentPlan?.name && c.currency === paymentCurrency
     );
-    
-    // Fallback: if no exact currency match, try to find by plan name only (for backward compatibility)
     const fallbackConfig = config || commissionConfigs.find(c => c.planName === lead.paymentPlan?.name);
     if (!fallbackConfig) return 0;
-    
-    // Compare amounts in the same currency (no conversion needed)
-    // Example: 699 CAD payment vs 699 CAD base price = 100% incentive
-    // Example: 500 CAD payment vs 699 CAD base price = 71.5% incentive
     const basePrice = fallbackConfig.basePrice > 0 ? fallbackConfig.basePrice : 1;
     const paymentRatio = Math.min(1, amountPaid / basePrice);
-    
-    // Return incentive in INR (same regardless of payment currency)
     return fallbackConfig.incentivePerLeadInr * paymentRatio;
+  };
+
+  const getTotalAmountForLead = (lead: Lead): number => {
+    if (lead.paymentBreakdown && lead.paymentBreakdown.length > 0) {
+      return lead.paymentBreakdown.reduce((s, l) => s + l.amount, 0);
+    }
+    return lead.paymentPlan?.price ?? 0;
   };
 
   const handleApprovalDecision = async (approvalId: string | null | undefined, action: 'approved' | 'denied') => {
@@ -1005,8 +1023,13 @@ export default function BdaAnalysisPage() {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
                               <h3 className="text-lg font-bold text-slate-900">{lead.clientName || 'N/A'}</h3>
+                              {lead.paymentBreakdown && lead.paymentBreakdown.length > 1 && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200" title="Referrals">
+                                  +{lead.paymentBreakdown.length - 1}
+                                </span>
+                              )}
                               <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(lead.bookingStatus)}`}>
                                 {lead.bookingStatus}
                               </span>
@@ -1063,18 +1086,25 @@ export default function BdaAnalysisPage() {
                                 <Calendar size={16} />
                                 <span>{formatDate(lead.scheduledEventStartTime)}</span>
                               </div>
-                              {lead.paymentPlan && (
+                              {(lead.paymentPlan || (lead.paymentBreakdown && lead.paymentBreakdown.length > 0)) && (
                                 <div className="flex items-center gap-2 text-slate-600">
                                   <DollarSign size={16} />
                                   <span>
-                                    {lead.paymentPlan.displayPrice || `$${lead.paymentPlan.price}`} - {lead.paymentPlan.name}
+                                    {lead.paymentBreakdown && lead.paymentBreakdown.length > 1 ? (
+                                      <>
+                                        Total amount paid: {((lead.paymentPlan?.currency || lead.paymentBreakdown?.[0]?.currency) === 'CAD' ? 'CA$' : '$')}{getTotalAmountForLead(lead).toFixed(0)}
+                                        <span className="text-slate-500 ml-1">+{lead.paymentBreakdown.length - 1} more referral</span>
+                                      </>
+                                    ) : (
+                                      `${lead.paymentPlan?.displayPrice || `$${lead.paymentPlan?.price}`} - ${lead.paymentPlan?.name}`
+                                    )}
                                   </span>
                                 </div>
                               )}
-                              {lead.bookingStatus === 'paid' && lead.paymentPlan && (
+                              {lead.bookingStatus === 'paid' && (lead.paymentPlan || (lead.paymentBreakdown && lead.paymentBreakdown.length > 0)) && (
                                 <div className="flex items-center gap-2 text-emerald-700 font-semibold">
                                   <DollarSign size={16} />
-                                  <span>Incentive (INR): ₹{getIncentiveForLead(lead).toFixed(0)}</span>
+                                  <span>Total incentive (INR): ₹{getIncentiveForLead(lead).toFixed(0)}</span>
                                 </div>
                               )}
                             </div>
