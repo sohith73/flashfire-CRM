@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Loader2, TrendingUp, Users, CheckCircle2, BarChart3, ArrowLeft, X, Mail, Phone, Calendar, DollarSign, FileText, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 const ADMIN_TOKEN_KEY = 'flashfire_crm_admin_token';
@@ -87,6 +88,7 @@ export default function BdaAnalysisPage() {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(''); // 'YYYY-MM' or '' for all time
   const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
   const [planFilter, setPlanFilter] = useState<PlanName | 'all'>('all');
   const [bdaEmailFilter, setBdaEmailFilter] = useState('');
@@ -461,6 +463,30 @@ export default function BdaAnalysisPage() {
     return lead.paymentPlan?.price ?? 0;
   };
 
+  /** Month-wise stats for selected BDA (by claim date). */
+  const monthlyStats = useMemo(() => {
+    if (!detailData?.leads?.length) return [];
+    const byMonth = new Map<string, { claimed: number; revenue: number; incentive: number }>();
+    for (const lead of detailData.leads) {
+      const claimedAt = lead.claimedBy?.claimedAt;
+      const key = claimedAt ? new Date(claimedAt).toISOString().slice(0, 7) : 'unknown';
+      if (!byMonth.has(key)) byMonth.set(key, { claimed: 0, revenue: 0, incentive: 0 });
+      const row = byMonth.get(key)!;
+      row.claimed += 1;
+      if (lead.bookingStatus === 'paid') {
+        row.revenue += getTotalAmountForLead(lead);
+        row.incentive += getIncentiveForLead(lead);
+      }
+    }
+    return Array.from(byMonth.entries())
+      .map(([month, data]) => ({
+        month,
+        monthLabel: month === 'unknown' ? 'Unknown' : new Date(month + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+        ...data
+      }))
+      .sort((a, b) => (a.month === 'unknown' ? '' : a.month).localeCompare(b.month === 'unknown' ? 'zzz' : b.month));
+  }, [detailData?.leads]);
+
   const handleApprovalDecision = async (approvalId: string | null | undefined, action: 'approved' | 'denied') => {
     if (!adminToken || !approvalId) return;
     setApprovalSavingId(approvalId);
@@ -827,11 +853,53 @@ export default function BdaAnalysisPage() {
 
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-end gap-4">
         <div className="space-y-1">
+          <label className="block text-xs font-semibold text-slate-600">Month</label>
+          <select
+            value={selectedMonth}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedMonth(val);
+              if (!val) {
+                setFromDate('');
+                setToDate('');
+              } else {
+                const [y, m] = val.split('-').map(Number);
+                setFromDate(`${y}-${String(m).padStart(2, '0')}-01`);
+                const lastDay = new Date(y, m, 0).getDate();
+                setToDate(`${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`);
+              }
+            }}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white min-w-[140px]"
+          >
+            <option value="">All time</option>
+            {(() => {
+              const options: { value: string; label: string }[] = [];
+              const now = new Date();
+              for (let i = 0; i < 24; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                options.push({
+                  value,
+                  label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                });
+              }
+              return options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ));
+            })()}
+          </select>
+        </div>
+        <div className="space-y-1">
           <label className="block text-xs font-semibold text-slate-600">From date</label>
           <input
             type="date"
             value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
+            onChange={(e) => {
+              setFromDate(e.target.value);
+              setSelectedMonth('');
+            }}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           />
         </div>
@@ -840,7 +908,10 @@ export default function BdaAnalysisPage() {
           <input
             type="date"
             value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
+            onChange={(e) => {
+              setToDate(e.target.value);
+              setSelectedMonth('');
+            }}
             className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
           />
         </div>
@@ -886,6 +957,7 @@ export default function BdaAnalysisPage() {
           onClick={() => {
             setFromDate('');
             setToDate('');
+            setSelectedMonth('');
             setStatusFilter('all');
             setPlanFilter('all');
             setBdaEmailFilter('');
@@ -1000,7 +1072,7 @@ export default function BdaAnalysisPage() {
                       <div className="text-2xl font-bold text-emerald-600">
                         ${detailData.leads
                           .filter(l => l.bookingStatus === 'paid')
-                          .reduce((sum, l) => sum + (l.paymentPlan?.price || 0), 0)
+                          .reduce((sum, l) => sum + getTotalAmountForLead(l), 0)
                           .toLocaleString()}
                       </div>
                     </div>
@@ -1014,6 +1086,49 @@ export default function BdaAnalysisPage() {
                       </div>
                     </div>
                   </div>
+
+                  {monthlyStats.length > 0 && (
+                    <div className="border border-slate-200 rounded-xl p-6 bg-slate-50/50">
+                      <h3 className="text-lg font-bold text-slate-900 mb-4">Performance by month</h3>
+                      <div className="mb-6 h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={monthlyStats} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="monthLabel" tick={{ fontSize: 12 }} />
+                            <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                            <Tooltip
+                              formatter={(value: number) => [value, 'Leads claimed']}
+                              labelFormatter={(label) => label}
+                            />
+                            <Bar dataKey="claimed" name="Leads claimed" fill="#f97316" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <p className="text-xs text-slate-500 mb-3">Revenue and incentive by month are in the table below.</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-100 border-b border-slate-200">
+                            <tr>
+                              <th className="px-4 py-2 text-left font-semibold text-slate-700">Month</th>
+                              <th className="px-4 py-2 text-right font-semibold text-slate-700">Claimed</th>
+                              <th className="px-4 py-2 text-right font-semibold text-slate-700">Revenue ($)</th>
+                              <th className="px-4 py-2 text-right font-semibold text-slate-700">Incentive (₹)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {monthlyStats.map((row) => (
+                              <tr key={row.month} className="border-b border-slate-100">
+                                <td className="px-4 py-2 font-medium text-slate-900">{row.monthLabel}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-slate-900">{row.claimed}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-emerald-600">${row.revenue.toLocaleString()}</td>
+                                <td className="px-4 py-2 text-right font-semibold text-slate-900">₹{row.incentive.toLocaleString('en-IN')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     {detailData.leads.map((lead) => (
