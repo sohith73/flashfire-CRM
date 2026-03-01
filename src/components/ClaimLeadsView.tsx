@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Search, Save, CheckCircle2, AlertCircle, X, Calendar, Phone, Mail, User, DollarSign, UserCheck, List, BarChart3, Filter, UserPlus, Trash2 } from 'lucide-react';
+import { Loader2, Search, Save, CheckCircle2, AlertCircle, X, Calendar, Phone, Mail, User, DollarSign, UserCheck, List, BarChart3, Filter, UserPlus, Trash2, XCircle } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 import { usePlanConfig, type PlanName } from '../context/PlanConfigContext';
 import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
@@ -256,6 +256,44 @@ export default function ClaimLeadsView() {
       setLead(data.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch lead');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnclaim = async () => {
+    if (!lead || !isClaimed) return;
+
+    if (!confirm('Are you sure you want to unclaim this lead? It will become available for other BDAs to claim.')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/bda/unclaim-lead/${lead.bookingId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to unclaim lead');
+      }
+
+      setSuccess('Lead unclaimed successfully');
+      setLead({ ...lead, claimedBy: { email: null, name: null, claimedAt: null } });
+      // Refresh my leads if on that tab
+      if (activeTab === 'my_leads') {
+        fetchMyLeads();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to unclaim lead');
     } finally {
       setLoading(false);
     }
@@ -631,10 +669,20 @@ export default function ClaimLeadsView() {
                       + Referral
                     </button>
                     {isClaimed && (
-                      <div className="text-sm">
-                        <p className="text-slate-600">Claimed by:</p>
-                        <p className="font-semibold text-slate-900">{lead.claimedBy?.name}</p>
-                        <p className="text-slate-500">{lead.claimedBy?.email}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm">
+                          <p className="text-slate-600">Claimed by:</p>
+                          <p className="font-semibold text-slate-900">{lead.claimedBy?.name}</p>
+                          <p className="text-slate-500">{lead.claimedBy?.email}</p>
+                        </div>
+                        <button
+                          onClick={handleUnclaim}
+                          disabled={loading}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 transition font-semibold disabled:opacity-50"
+                        >
+                          <XCircle size={18} />
+                          Unclaim This Lead
+                        </button>
                       </div>
                     )}
                   </div>
