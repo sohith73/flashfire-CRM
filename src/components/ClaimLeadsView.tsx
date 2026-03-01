@@ -29,10 +29,10 @@ interface Lead {
   meetingNotes?: string;
   anythingToKnow?: string;
   claimedBy?: {
-    email: string;
-    name: string;
-    claimedAt: string;
-  };
+    email: string | null;
+    name: string | null;
+    claimedAt: string | null;
+  } | null;
   bdaApprovalStatus?: 'pending' | 'approved' | 'denied' | null;
 }
 
@@ -287,7 +287,7 @@ export default function ClaimLeadsView() {
       }
 
       setSuccess('Lead unclaimed successfully');
-      setLead({ ...lead, claimedBy: { email: null, name: null, claimedAt: null } });
+      setLead({ ...lead, claimedBy: null });
       // Refresh my leads if on that tab
       if (activeTab === 'my_leads') {
         fetchMyLeads();
@@ -511,7 +511,7 @@ export default function ClaimLeadsView() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isClaimed = lead?.claimedBy && lead.claimedBy.email && lead.claimedBy.email === user?.email;
+  const isClaimed = lead?.claimedBy?.email && lead.claimedBy.email === user?.email;
 
   return (
     <div className="p-6 space-y-6">
