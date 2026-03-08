@@ -16,6 +16,7 @@ import {
   Users,
   UserCheck,
   Bell,
+  Facebook,
 } from 'lucide-react';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
@@ -32,10 +33,11 @@ import LeadsView from '../components/LeadsView';
 import QualifiedLeadsView from '../components/QualifiedLeadsView';
 import ClaimLeadsView from '../components/ClaimLeadsView';
 import MeetingInfoView from '../components/MeetingInfoView';
+import MetaLeadsView from '../components/MetaLeadsView';
 import '../index.css';
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'meeting_links';
+type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'meeting_links' | 'meta_leads';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -51,6 +53,7 @@ const TAB_CONFIG: Array<{
   { tab: 'workflows', permission: 'workflows', label: 'Workflows', icon: Workflow },
   { tab: 'leads', permission: 'leads', label: 'Leads', icon: Users },
   { tab: 'qualified_leads', permission: 'leads', label: 'Qualified Leads', icon: Filter },
+  { tab: 'meta_leads', permission: 'leads', label: 'Meta Leads', icon: Facebook },
   { tab: 'claim_leads', permission: 'claim_leads', label: 'Claim Your Leads', icon: UserCheck },
   { tab: 'meeting_links', permission: 'meeting_links', label: 'Meeting Info', icon: Video },
 ];
@@ -409,6 +412,13 @@ export default function CrmDashboardPage() {
                 )}
                 {activeTab === 'qualified_leads' && (
                   <QualifiedLeadsView
+                    onOpenEmailCampaign={handleOpenEmailCampaign}
+                    onOpenWhatsAppCampaign={handleOpenWhatsAppCampaign}
+                    onNavigateToWorkflows={() => safeSetActiveTab('workflows')}
+                  />
+                )}
+                {activeTab === 'meta_leads' && (
+                  <MetaLeadsView
                     onOpenEmailCampaign={handleOpenEmailCampaign}
                     onOpenWhatsAppCampaign={handleOpenWhatsAppCampaign}
                     onNavigateToWorkflows={() => safeSetActiveTab('workflows')}
