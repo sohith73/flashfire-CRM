@@ -29,7 +29,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, CartesianGrid } from 'recharts';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
@@ -146,6 +146,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [sqlCount, setSqlCount] = useState(0);
   const [convertedCount, setConvertedCount] = useState(0);
   const [statusBreakdown, setStatusBreakdown] = useState<Record<string, number>>({});
+  const [monthlyStatusBreakdown, setMonthlyStatusBreakdown] = useState<Array<Record<string, number | string>>>([]);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedBookingForNotes, setSelectedBookingForNotes] = useState<{ id: string; name: string; notes: string } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -256,8 +257,10 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           setSqlCount(data.stats.sqlCount ?? 0);
           setConvertedCount(data.stats.convertedCount ?? 0);
           setStatusBreakdown((data.stats as { statusBreakdown?: Record<string, number> }).statusBreakdown || {});
+          setMonthlyStatusBreakdown((data.stats as { monthlyStatusBreakdown?: Array<Record<string, number | string>> }).monthlyStatusBreakdown || []);
         } else {
           setStatusBreakdown({});
+          setMonthlyStatusBreakdown([]);
         }
       } else {
         throw new Error(data.message || 'Failed to fetch leads');
@@ -1067,56 +1070,102 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         </div>
       )}
 
-      {/* Status Statistics - Show when date filters are selected */}
+      {/* Monthly Status Chart - Show when date filters are selected */}
       {dateRangeDisplay && (
-        <div className="bg-white border border-slate-200  p-5">
-          <h2 className="text-base font-semibold text-slate-900 mb-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900 mb-1">
             Meetings from {dateRangeDisplay}
           </h2>
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            {statusStats.notScheduled > 0 && (
+          <p className="text-xs text-slate-500 mb-4">Monthly breakdown by status • Hover for details</p>
+          {monthlyStatusBreakdown.length > 0 ? (
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={monthlyStatusBreakdown.map((m) => ({
+                    ...m,
+                    monthLabel: (() => {
+                      const [y, mo] = (m.month as string).split('-');
+                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      return `${months[parseInt(mo, 10) - 1]} ${y}`;
+                    })(),
+                    NotScheduled: m['not-scheduled'] ?? 0,
+                    Booked: m.booked ?? 0,
+                    Cancelled: m.canceled ?? 0,
+                    NoShow: m['no-show'] ?? 0,
+                    Completed: m.completed ?? 0,
+                    Rescheduled: m.rescheduled ?? 0,
+                    Ignored: m.ignored ?? 0,
+                    Converted: m.paid ?? 0,
+                  }))}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(15,23,42,0.04)' }}
+                    contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value: number, name: string) => [value, name]}
+                    labelFormatter={(label) => label}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar dataKey="NotScheduled" stackId="a" fill="#3B82F6" name="Not Scheduled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Booked" stackId="a" fill="#F97316" name="Booked" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Cancelled" stackId="a" fill="#BE123C" name="Cancelled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="NoShow" stackId="a" fill="#FB7185" name="No-Show" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Completed" stackId="a" fill="#22C55E" name="Completed" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Rescheduled" stackId="a" fill="#F59E0B" name="Rescheduled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Ignored" stackId="a" fill="#64748B" name="Ignored" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Converted" stackId="a" fill="#14B8A6" name="Converted" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 py-4">
+              {statusStats.notScheduled > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-slate-600 text-[11px] font-medium">Not Scheduled</span>
+                  <span className="text-lg font-bold text-blue-600">{statusStats.notScheduled}</span>
+                </div>
+              )}
               <div className="flex items-baseline gap-2">
-                <span className="text-slate-600 text-[11px] font-medium">Not Scheduled</span>
-                <span className="text-lg font-bold text-blue-600">{statusStats.notScheduled}</span>
+                <span className="text-slate-600 text-[11px] font-medium">Booked</span>
+                <span className="text-lg font-bold text-orange-600">{statusStats.booked}</span>
               </div>
-            )}
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Booked</span>
-              <span className="text-lg font-bold text-orange-600">{statusStats.booked}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">Cancelled</span>
+                <span className="text-lg font-bold text-rose-700">{statusStats.canceled}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">No-Show</span>
+                <span className="text-lg font-bold text-rose-600">{statusStats.noShow}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">Completed</span>
+                <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
+              </div>
+              {variant === 'qualified' && (
+                <>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-violet-600 text-[11px] font-medium">MQL</span>
+                    <span className="text-lg font-bold text-violet-700">{statusStats.notScheduled + statusStats.booked + statusStats.canceled + statusStats.noShow + statusStats.rescheduled + statusStats.ignored}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-emerald-600 text-[11px] font-medium">SQL</span>
+                    <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-teal-600 text-[11px] font-medium">Converted</span>
+                    <span className="text-lg font-bold text-teal-700">{statusStats.paid}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-baseline gap-2 ml-auto">
+                <span className="text-slate-500 text-[11px] font-medium">Total:</span>
+                <span className="text-lg font-bold text-slate-700">{statusStats.total}</span>
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Cancelled</span>
-              <span className="text-lg font-bold text-rose-700">{statusStats.canceled}</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">No-Show</span>
-              <span className="text-lg font-bold text-rose-600">{statusStats.noShow}</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Completed</span>
-              <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
-            </div>
-            {variant === 'qualified' && (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-violet-600 text-[11px] font-medium">MQL</span>
-                  <span className="text-lg font-bold text-violet-700">{statusStats.notScheduled + statusStats.booked + statusStats.canceled + statusStats.noShow + statusStats.rescheduled + statusStats.ignored}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-emerald-600 text-[11px] font-medium">SQL</span>
-                  <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-teal-600 text-[11px] font-medium">Converted</span>
-                  <span className="text-lg font-bold text-teal-700">{statusStats.paid}</span>
-                </div>
-              </>
-            )}
-            <div className="flex items-baseline gap-2 ml-auto">
-              <span className="text-slate-500 text-[11px] font-medium">Total:</span>
-              <span className="text-lg font-bold text-slate-700">{statusStats.total}</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1344,6 +1393,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
               minAmount,
               maxAmount,
             }}
+            monthlyStatusBreakdown={monthlyStatusBreakdown}
           />
         </Suspense>
       )}

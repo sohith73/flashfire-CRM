@@ -93,6 +93,7 @@ export interface QualifiedLeadsGraphsFilters {
 interface Props {
   className?: string;
   filters?: QualifiedLeadsGraphsFilters;
+  monthlyStatusBreakdown?: Array<Record<string, number | string>>;
 }
 
 // ── Shared tooltip style ───────────────────────────────────────────
@@ -100,11 +101,14 @@ const tooltipStyle = { borderRadius: 8, borderColor: '#E2E8F0', fontSize: 12, bo
 const cursorStyle = { fill: 'rgba(15,23,42,0.04)' };
 
 // ── Chart card wrapper (memoized) ──────────────────────────────────
-const ChartCard = memo(({ title, subtitle, children, className = '' }: { title: string; subtitle: string; children: React.ReactNode; className?: string }) => (
+const ChartCard = memo(({ title, subtitle, children, className = '', headerRight }: { title: string; subtitle: string; children: React.ReactNode; className?: string; headerRight?: React.ReactNode }) => (
   <div className={`bg-white border border-slate-200 rounded-xl p-5 ${className}`}>
-    <div className="mb-4">
-      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
+    <div className={`mb-4 ${headerRight ? 'flex flex-wrap items-start justify-between gap-3' : ''}`}>
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
+      </div>
+      {headerRight}
     </div>
     {children}
   </div>
@@ -166,13 +170,15 @@ const fmtDate = (d: string) => {
 };
 
 // ── Main Component ─────────────────────────────────────────────────
-export default function QualifiedLeadsGraphs({ className = '', filters = {} }: Props) {
+export default function QualifiedLeadsGraphs({ className = '', filters = {}, monthlyStatusBreakdown = [] }: Props) {
   const { token } = useCrmAuth();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<DateRange>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [monthlyChartFrom, setMonthlyChartFrom] = useState<string>('');
+  const [monthlyChartTo, setMonthlyChartTo] = useState<string>('');
 
   // Use parent filters when provided; otherwise fall back to internal date range
   const dateParams = useMemo(() => {
@@ -436,6 +442,127 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {} }: P
           </div>
         </ChartCard>
       </div>
+
+      {/* ── Row 4: Monthly Status (Big chart below Leads by Hour) ───── */}
+      {monthlyStatusBreakdown.length > 0 && (() => {
+        const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthOptions = monthlyStatusBreakdown.map((m) => m.month as string).filter(Boolean);
+        const filteredMonthly = monthlyStatusBreakdown.filter((m) => {
+          const mo = m.month as string;
+          if (!mo) return false;
+          if (monthlyChartFrom && mo < monthlyChartFrom) return false;
+          if (monthlyChartTo && mo > monthlyChartTo) return false;
+          return true;
+        });
+        const chartData = filteredMonthly.map((m) => ({
+          ...m,
+          monthLabel: (() => {
+            const [y, mo] = (m.month as string).split('-');
+            return `${monthLabels[parseInt(mo, 10) - 1]} ${y}`;
+          })(),
+          NotScheduled: m['not-scheduled'] ?? 0,
+          Booked: m.booked ?? 0,
+          Cancelled: m.canceled ?? 0,
+          NoShow: m['no-show'] ?? 0,
+          Completed: m.completed ?? 0,
+          Ignored: m.ignored ?? 0,
+          Converted: m.paid ?? 0,
+        }));
+        const barWidth = 48;
+        const chartMinWidth = Math.max(400, chartData.length * barWidth);
+        if (chartData.length === 0) {
+          return (
+            <div className="w-full">
+              <ChartCard title="Monthly Meetings by Status" subtitle="Booked, Cancelled, No-Show, Completed, Converted — hover for details" headerRight={
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-[11px] font-medium text-slate-500">From</label>
+                  <select value={monthlyChartFrom} onChange={(e) => setMonthlyChartFrom(e.target.value)} className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white">
+                    <option value="">All</option>
+                    {monthOptions.map((mo) => { const [y, m] = mo.split('-'); return <option key={mo} value={mo}>{monthLabels[parseInt(m, 10) - 1]} {y}</option>; })}
+                  </select>
+                  <label className="text-[11px] font-medium text-slate-500">To</label>
+                  <select value={monthlyChartTo} onChange={(e) => setMonthlyChartTo(e.target.value)} className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white">
+                    <option value="">All</option>
+                    {monthOptions.map((mo) => { const [y, m] = mo.split('-'); return <option key={mo} value={mo}>{monthLabels[parseInt(m, 10) - 1]} {y}</option>; })}
+                  </select>
+                </div>
+              }>
+                <div className="h-32 flex items-center justify-center text-slate-500 text-sm">No data for selected month range</div>
+              </ChartCard>
+            </div>
+          );
+        }
+        return (
+          <div className="w-full">
+            <ChartCard
+              title="Monthly Meetings by Status"
+              subtitle="Booked, Cancelled, No-Show, Completed, Converted — hover for details"
+              headerRight={
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-[11px] font-medium text-slate-500">From</label>
+                  <select
+                    value={monthlyChartFrom}
+                    onChange={(e) => setMonthlyChartFrom(e.target.value)}
+                    className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
+                  >
+                    <option value="">All</option>
+                    {monthOptions.map((mo) => {
+                      const [y, m] = mo.split('-');
+                      return (
+                        <option key={mo} value={mo}>
+                          {monthLabels[parseInt(m, 10) - 1]} {y}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <label className="text-[11px] font-medium text-slate-500">To</label>
+                  <select
+                    value={monthlyChartTo}
+                    onChange={(e) => setMonthlyChartTo(e.target.value)}
+                    className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500"
+                  >
+                    <option value="">All</option>
+                    {monthOptions.map((mo) => {
+                      const [y, m] = mo.split('-');
+                      return (
+                        <option key={mo} value={mo}>
+                          {monthLabels[parseInt(m, 10) - 1]} {y}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              }
+            >
+              <div className="h-96 min-h-[384px] overflow-x-auto overflow-y-hidden">
+                <div style={{ minWidth: chartMinWidth }} className="h-full">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={chartMinWidth}>
+                    <BarChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                      <XAxis dataKey="monthLabel" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                      <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={36} />
+                      <Tooltip
+                        cursor={{ fill: 'rgba(15,23,42,0.04)' }}
+                        contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        formatter={(value: number, name: string) => [value, name]}
+                        labelFormatter={(label) => label}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                      <Bar dataKey="NotScheduled" stackId="a" fill="#3B82F6" name="Not Scheduled" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Booked" stackId="a" fill="#F97316" name="Booked" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Cancelled" stackId="a" fill="#BE123C" name="Cancelled" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="NoShow" stackId="a" fill="#FB7185" name="No-Show" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Completed" stackId="a" fill="#22C55E" name="Completed" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Ignored" stackId="a" fill="#64748B" name="Ignored" radius={[0, 0, 0, 0]} />
+                      <Bar dataKey="Converted" stackId="a" fill="#14B8A6" name="Converted" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </ChartCard>
+          </div>
+        );
+      })()}
     </div>
   );
 }
