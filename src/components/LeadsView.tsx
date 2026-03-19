@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Loader2,
@@ -29,7 +29,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, PieChart, Pie, Cell, Legend, CartesianGrid } from 'recharts';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
@@ -38,6 +38,8 @@ import NotesModal from './NotesModal';
 import FollowUpModal, { type FollowUpData } from './FollowUpModal';
 import PlanDetailsModal, { type PlanDetailsData } from './PlanDetailsModal';
 import CustomWorkflowsModal from './CustomWorkflowsModal';
+
+const QualifiedLeadsGraphs = lazy(() => import('./QualifiedLeadsGraphs'));
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -143,6 +145,8 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [mqlCount, setMqlCount] = useState(0);
   const [sqlCount, setSqlCount] = useState(0);
   const [convertedCount, setConvertedCount] = useState(0);
+  const [statusBreakdown, setStatusBreakdown] = useState<Record<string, number>>({});
+  const [monthlyStatusBreakdown, setMonthlyStatusBreakdown] = useState<Array<Record<string, number | string>>>([]);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedBookingForNotes, setSelectedBookingForNotes] = useState<{ id: string; name: string; notes: string } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -165,6 +169,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [selectAllLoading, setSelectAllLoading] = useState(false);
   const statusDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [statusDropdownPosition, setStatusDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const [graphsRefreshKey, setGraphsRefreshKey] = useState(0);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now().toString();
@@ -251,6 +256,11 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           setMqlCount(data.stats.mqlCount ?? 0);
           setSqlCount(data.stats.sqlCount ?? 0);
           setConvertedCount(data.stats.convertedCount ?? 0);
+          setStatusBreakdown((data.stats as { statusBreakdown?: Record<string, number> }).statusBreakdown || {});
+          setMonthlyStatusBreakdown((data.stats as { monthlyStatusBreakdown?: Array<Record<string, number | string>> }).monthlyStatusBreakdown || []);
+        } else {
+          setStatusBreakdown({});
+          setMonthlyStatusBreakdown([]);
         }
       } else {
         throw new Error(data.message || 'Failed to fetch leads');
@@ -378,8 +388,25 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
     });
   }, [bookings]);
 
-  // Calculate status statistics from filtered data (unique leads only)
+  // Use API statusBreakdown when available (correct full-filtered counts); fallback to filteredData for backwards compat
   const statusStats = useMemo(() => {
+    const sb = statusBreakdown;
+    const hasApiBreakdown = Object.keys(sb).length > 0;
+    if (hasApiBreakdown) {
+      const booked = (sb['scheduled'] ?? 0) + (sb['rescheduled'] ?? 0);
+      const total = Object.values(sb).reduce((sum, n) => sum + n, 0);
+      return {
+        notScheduled: sb['not-scheduled'] ?? 0,
+        booked,
+        completed: sb['completed'] ?? 0,
+        canceled: sb['canceled'] ?? 0,
+        noShow: sb['no-show'] ?? 0,
+        rescheduled: sb['rescheduled'] ?? 0,
+        ignored: sb['ignored'] ?? 0,
+        paid: sb['paid'] ?? 0,
+        total,
+      };
+    }
     const stats = {
       'not-scheduled': 0,
       scheduled: 0,
@@ -390,16 +417,13 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
       ignored: 0,
       paid: 0,
     };
-
     filteredData.forEach((lead) => {
       if (lead.status && stats.hasOwnProperty(lead.status)) {
         stats[lead.status as keyof typeof stats]++;
       }
     });
-
     const total = filteredData.length;
-    const booked = stats.scheduled + stats.rescheduled; // Booked includes scheduled and rescheduled
-
+    const booked = stats.scheduled + stats.rescheduled;
     return {
       notScheduled: stats['not-scheduled'],
       booked,
@@ -411,7 +435,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
       paid: stats.paid,
       total,
     };
-  }, [filteredData]);
+  }, [filteredData, statusBreakdown]);
 
   const qualificationChartData = useMemo(
     () => {
@@ -1046,56 +1070,102 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         </div>
       )}
 
-      {/* Status Statistics - Show when date filters are selected */}
+      {/* Monthly Status Chart - Show when date filters are selected */}
       {dateRangeDisplay && (
-        <div className="bg-white border border-slate-200  p-5">
-          <h2 className="text-base font-semibold text-slate-900 mb-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+          <h2 className="text-base font-semibold text-slate-900 mb-1">
             Meetings from {dateRangeDisplay}
           </h2>
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            {statusStats.notScheduled > 0 && (
+          <p className="text-xs text-slate-500 mb-4">Monthly breakdown by status • Hover for details</p>
+          {monthlyStatusBreakdown.length > 0 ? (
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={monthlyStatusBreakdown.map((m) => ({
+                    ...m,
+                    monthLabel: (() => {
+                      const [y, mo] = (m.month as string).split('-');
+                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      return `${months[parseInt(mo, 10) - 1]} ${y}`;
+                    })(),
+                    NotScheduled: m['not-scheduled'] ?? 0,
+                    Booked: m.booked ?? 0,
+                    Cancelled: m.canceled ?? 0,
+                    NoShow: m['no-show'] ?? 0,
+                    Completed: m.completed ?? 0,
+                    Rescheduled: m.rescheduled ?? 0,
+                    Ignored: m.ignored ?? 0,
+                    Converted: m.paid ?? 0,
+                  }))}
+                  margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'rgba(15,23,42,0.04)' }}
+                    contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    formatter={(value: number, name: string) => [value, name]}
+                    labelFormatter={(label) => label}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar dataKey="NotScheduled" stackId="a" fill="#3B82F6" name="Not Scheduled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Booked" stackId="a" fill="#F97316" name="Booked" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Cancelled" stackId="a" fill="#BE123C" name="Cancelled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="NoShow" stackId="a" fill="#FB7185" name="No-Show" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Completed" stackId="a" fill="#22C55E" name="Completed" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Rescheduled" stackId="a" fill="#F59E0B" name="Rescheduled" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Ignored" stackId="a" fill="#64748B" name="Ignored" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Converted" stackId="a" fill="#14B8A6" name="Converted" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 py-4">
+              {statusStats.notScheduled > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-slate-600 text-[11px] font-medium">Not Scheduled</span>
+                  <span className="text-lg font-bold text-blue-600">{statusStats.notScheduled}</span>
+                </div>
+              )}
               <div className="flex items-baseline gap-2">
-                <span className="text-slate-600 text-[11px] font-medium">Not Scheduled</span>
-                <span className="text-lg font-bold text-blue-600">{statusStats.notScheduled}</span>
+                <span className="text-slate-600 text-[11px] font-medium">Booked</span>
+                <span className="text-lg font-bold text-orange-600">{statusStats.booked}</span>
               </div>
-            )}
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Booked</span>
-              <span className="text-lg font-bold text-orange-600">{statusStats.booked}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">Cancelled</span>
+                <span className="text-lg font-bold text-rose-700">{statusStats.canceled}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">No-Show</span>
+                <span className="text-lg font-bold text-rose-600">{statusStats.noShow}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-slate-600 text-[11px] font-medium">Completed</span>
+                <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
+              </div>
+              {variant === 'qualified' && (
+                <>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-violet-600 text-[11px] font-medium">MQL</span>
+                    <span className="text-lg font-bold text-violet-700">{statusStats.notScheduled + statusStats.booked + statusStats.canceled + statusStats.noShow + statusStats.rescheduled + statusStats.ignored}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-emerald-600 text-[11px] font-medium">SQL</span>
+                    <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-teal-600 text-[11px] font-medium">Converted</span>
+                    <span className="text-lg font-bold text-teal-700">{statusStats.paid}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex items-baseline gap-2 ml-auto">
+                <span className="text-slate-500 text-[11px] font-medium">Total:</span>
+                <span className="text-lg font-bold text-slate-700">{statusStats.total}</span>
+              </div>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Cancelled</span>
-              <span className="text-lg font-bold text-rose-700">{statusStats.canceled}</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">No-Show</span>
-              <span className="text-lg font-bold text-rose-600">{statusStats.noShow}</span>
-            </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-slate-600 text-[11px] font-medium">Completed</span>
-              <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
-            </div>
-            {variant === 'qualified' && (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-violet-600 text-[11px] font-medium">MQL</span>
-                  <span className="text-lg font-bold text-violet-700">{statusStats.notScheduled + statusStats.booked + statusStats.canceled + statusStats.noShow + statusStats.rescheduled + statusStats.ignored}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-emerald-600 text-[11px] font-medium">SQL</span>
-                  <span className="text-lg font-bold text-emerald-700">{statusStats.completed}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-teal-600 text-[11px] font-medium">Converted</span>
-                  <span className="text-lg font-bold text-teal-700">{statusStats.paid}</span>
-                </div>
-              </>
-            )}
-            <div className="flex items-baseline gap-2 ml-auto">
-              <span className="text-slate-500 text-[11px] font-medium">Total:</span>
-              <span className="text-lg font-bold text-slate-700">{statusStats.total}</span>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -1116,159 +1186,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         </div>
       )}
 
-      {variant === 'qualified' && activeLeadsTab === 'graphs' && qualificationChartData.some((item) => item.value > 0) && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white border border-slate-200 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">MQL share</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {totalQualificationCount > 0
-                  ? `${Math.round((qualificationChartData[0]?.value ?? 0) / totalQualificationCount * 100)}%`
-                  : '—'}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">Of all qualified leads</p>
-            </div>
-            <div className="bg-white border border-slate-200 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">SQL share</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {totalQualificationCount > 0
-                  ? `${Math.round((qualificationChartData[1]?.value ?? 0) / totalQualificationCount * 100)}%`
-                  : '—'}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">Sales‑ready leads</p>
-            </div>
-            <div className="bg-white border border-slate-200 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Converted share</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {totalQualificationCount > 0
-                  ? `${Math.round((qualificationChartData[2]?.value ?? 0) / totalQualificationCount * 100)}%`
-                  : '—'}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">Paying customers</p>
-            </div>
-            <div className="bg-white border border-slate-200 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Overall conversion</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {statusStats.total > 0
-                  ? `${Math.round((statusStats.paid / statusStats.total) * 100)}%`
-                  : '—'}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-1">Converted / all filtered leads</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white border border-slate-200  p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Qualification breakdown</h2>
-                <p className="text-xs text-slate-500">MQL, SQL & Converted for the current filters</p>
-              </div>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={qualificationChartData}>
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                  <RechartsTooltip
-                    cursor={{ fill: 'rgba(15,23,42,0.03)' }}
-                    contentStyle={{ borderRadius: 8, borderColor: '#E2E8F0', fontSize: 12 }}
-                  />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    {qualificationChartData.map((entry) => (
-                      <Cell key={entry.name} fill={qualificationColors[entry.name] || '#0F172A'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-            <div className="bg-white border border-slate-200  p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">Pipeline by status</h2>
-                <p className="text-xs text-slate-500">How leads move across meeting statuses</p>
-              </div>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pipelineStatusChartData.filter((item) => item.value > 0)}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={48}
-                    outerRadius={80}
-                    paddingAngle={2}
-                  >
-                    {pipelineStatusChartData
-                      .filter((item) => item.value > 0)
-                      .map((entry) => {
-                        const colorMap: Record<string, string> = {
-                          'Not Scheduled': '#9CA3AF', // neutral
-                          Booked: '#F59E0B',         // amber
-                          Completed: '#22C55E',      // green
-                          Cancelled: '#EF4444',      // red
-                          'No-Show': '#FB7185',      // rose
-                          Rescheduled: '#3B82F6',    // blue
-                          Ignored: '#6B7280',        // slate
-                          Converted: '#6366F1',      // indigo
-                        };
-                        return <Cell key={entry.name} fill={colorMap[entry.name] || '#E5E7EB'} />;
-                      })}
-                  </Pie>
-                  <Legend
-                    layout="vertical"
-                    align="right"
-                    verticalAlign="middle"
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: 11 }}
-                  />
-                  <RechartsTooltip
-                    cursor={{ fill: 'rgba(15,23,42,0.03)' }}
-                    contentStyle={{ borderRadius: 8, borderColor: '#E2E8F0', fontSize: 12 }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="bg-orange-50 border border-orange-200  p-4 text-orange-700">
-          {error}
-        </div>
-      )}
-
-      {activeLeadsTab === 'table' && (selectedRows.size > 0 || (allSelectedBookingIds && allSelectedBookingIds.length > 0)) && (
-        <div className="bg-orange-50 border border-orange-200  px-4 py-3 flex items-center justify-between">
-          <span className="text-xs font-semibold text-orange-900">
-            {allSelectedBookingIds
-              ? `${allSelectedBookingIds.length} row${allSelectedBookingIds.length !== 1 ? 's' : ''} selected (all filtered)`
-              : `${selectedRows.size} row${selectedRows.size !== 1 ? 's' : ''} selected`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsAttachWorkflowsModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-violet-200 text-violet-700 rounded-lg bg-white hover:bg-violet-50 transition text-[11px] font-semibold"
-            >
-              <Workflow size={16} />
-              Attach Workflows ({selectedBookingIdsForBulk.length})
-            </button>
-            <button
-              onClick={handleBulkEmail}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-[11px] font-semibold"
-            >
-              <Send size={16} />
-              Send Email ({selectedBookingIdsForBulk.length})
-            </button>
-          </div>
-        </div>
-      )}
-
+      {/* Filters - shown above graphs when on Graphs tab, above table when on Table tab */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
@@ -1279,7 +1197,6 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           </div>
         </div>
         <div className="p-4 space-y-4">
-          {/* Row 1: Lead filters */}
           <div className="flex flex-wrap items-end gap-3">
             {activeLeadsTab === 'table' && (
               <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
@@ -1372,8 +1289,6 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
               </button>
             )}
           </div>
-
-          {/* Row 2: Date, amount, actions */}
           <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-slate-100">
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Date range</label>
@@ -1449,7 +1364,10 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
                 </button>
               )}
               <button
-                onClick={() => fetchLeads(bookingsPage)}
+                onClick={() => {
+                  if (activeLeadsTab === 'table') fetchLeads(bookingsPage);
+                  if (activeLeadsTab === 'graphs') setGraphsRefreshKey((k) => k + 1);
+                }}
                 disabled={refreshing}
                 className="h-9 px-4 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
@@ -1460,7 +1378,58 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           </div>
         </div>
       </div>
- 
+
+      {variant === 'qualified' && activeLeadsTab === 'graphs' && (
+        <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" /></div>}>
+          <QualifiedLeadsGraphs
+            key={graphsRefreshKey}
+            filters={{
+              fromDate,
+              toDate,
+              qualification: qualificationFilter,
+              status: statusFilter,
+              planName: planFilter,
+              utmSource: utmFilter,
+              minAmount,
+              maxAmount,
+            }}
+            monthlyStatusBreakdown={monthlyStatusBreakdown}
+          />
+        </Suspense>
+      )}
+
+      {error && (
+        <div className="bg-orange-50 border border-orange-200  p-4 text-orange-700">
+          {error}
+        </div>
+      )}
+
+      {activeLeadsTab === 'table' && (selectedRows.size > 0 || (allSelectedBookingIds && allSelectedBookingIds.length > 0)) && (
+        <div className="bg-orange-50 border border-orange-200  px-4 py-3 flex items-center justify-between">
+          <span className="text-xs font-semibold text-orange-900">
+            {allSelectedBookingIds
+              ? `${allSelectedBookingIds.length} row${allSelectedBookingIds.length !== 1 ? 's' : ''} selected (all filtered)`
+              : `${selectedRows.size} row${selectedRows.size !== 1 ? 's' : ''} selected`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAttachWorkflowsModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-violet-200 text-violet-700 rounded-lg bg-white hover:bg-violet-50 transition text-[11px] font-semibold"
+            >
+              <Workflow size={16} />
+              Attach Workflows ({selectedBookingIdsForBulk.length})
+            </button>
+            <button
+              onClick={handleBulkEmail}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-[11px] font-semibold"
+            >
+              <Send size={16} />
+              Send Email ({selectedBookingIdsForBulk.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeLeadsTab === 'table' && (
       <div className="overflow-hidden bg-white border border-slate-200">
         
