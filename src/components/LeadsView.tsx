@@ -145,6 +145,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [mqlCount, setMqlCount] = useState(0);
   const [sqlCount, setSqlCount] = useState(0);
   const [convertedCount, setConvertedCount] = useState(0);
+  const [statusBreakdown, setStatusBreakdown] = useState<Record<string, number>>({});
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedBookingForNotes, setSelectedBookingForNotes] = useState<{ id: string; name: string; notes: string } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -167,6 +168,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
   const [selectAllLoading, setSelectAllLoading] = useState(false);
   const statusDropdownRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [statusDropdownPosition, setStatusDropdownPosition] = useState<{ top: number; left: number } | null>(null);
+  const [graphsRefreshKey, setGraphsRefreshKey] = useState(0);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now().toString();
@@ -253,6 +255,9 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           setMqlCount(data.stats.mqlCount ?? 0);
           setSqlCount(data.stats.sqlCount ?? 0);
           setConvertedCount(data.stats.convertedCount ?? 0);
+          setStatusBreakdown((data.stats as { statusBreakdown?: Record<string, number> }).statusBreakdown || {});
+        } else {
+          setStatusBreakdown({});
         }
       } else {
         throw new Error(data.message || 'Failed to fetch leads');
@@ -380,8 +385,25 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
     });
   }, [bookings]);
 
-  // Calculate status statistics from filtered data (unique leads only)
+  // Use API statusBreakdown when available (correct full-filtered counts); fallback to filteredData for backwards compat
   const statusStats = useMemo(() => {
+    const sb = statusBreakdown;
+    const hasApiBreakdown = Object.keys(sb).length > 0;
+    if (hasApiBreakdown) {
+      const booked = (sb['scheduled'] ?? 0) + (sb['rescheduled'] ?? 0);
+      const total = Object.values(sb).reduce((sum, n) => sum + n, 0);
+      return {
+        notScheduled: sb['not-scheduled'] ?? 0,
+        booked,
+        completed: sb['completed'] ?? 0,
+        canceled: sb['canceled'] ?? 0,
+        noShow: sb['no-show'] ?? 0,
+        rescheduled: sb['rescheduled'] ?? 0,
+        ignored: sb['ignored'] ?? 0,
+        paid: sb['paid'] ?? 0,
+        total,
+      };
+    }
     const stats = {
       'not-scheduled': 0,
       scheduled: 0,
@@ -392,16 +414,13 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
       ignored: 0,
       paid: 0,
     };
-
     filteredData.forEach((lead) => {
       if (lead.status && stats.hasOwnProperty(lead.status)) {
         stats[lead.status as keyof typeof stats]++;
       }
     });
-
     const total = filteredData.length;
-    const booked = stats.scheduled + stats.rescheduled; // Booked includes scheduled and rescheduled
-
+    const booked = stats.scheduled + stats.rescheduled;
     return {
       notScheduled: stats['not-scheduled'],
       booked,
@@ -413,7 +432,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
       paid: stats.paid,
       total,
     };
-  }, [filteredData]);
+  }, [filteredData, statusBreakdown]);
 
   const qualificationChartData = useMemo(
     () => {
@@ -1118,44 +1137,7 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
         </div>
       )}
 
-      {variant === 'qualified' && activeLeadsTab === 'graphs' && (
-        <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" /></div>}>
-          <QualifiedLeadsGraphs />
-        </Suspense>
-      )}
-
-      {error && (
-        <div className="bg-orange-50 border border-orange-200  p-4 text-orange-700">
-          {error}
-        </div>
-      )}
-
-      {activeLeadsTab === 'table' && (selectedRows.size > 0 || (allSelectedBookingIds && allSelectedBookingIds.length > 0)) && (
-        <div className="bg-orange-50 border border-orange-200  px-4 py-3 flex items-center justify-between">
-          <span className="text-xs font-semibold text-orange-900">
-            {allSelectedBookingIds
-              ? `${allSelectedBookingIds.length} row${allSelectedBookingIds.length !== 1 ? 's' : ''} selected (all filtered)`
-              : `${selectedRows.size} row${selectedRows.size !== 1 ? 's' : ''} selected`}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsAttachWorkflowsModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-violet-200 text-violet-700 rounded-lg bg-white hover:bg-violet-50 transition text-[11px] font-semibold"
-            >
-              <Workflow size={16} />
-              Attach Workflows ({selectedBookingIdsForBulk.length})
-            </button>
-            <button
-              onClick={handleBulkEmail}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-[11px] font-semibold"
-            >
-              <Send size={16} />
-              Send Email ({selectedBookingIdsForBulk.length})
-            </button>
-          </div>
-        </div>
-      )}
-
+      {/* Filters - shown above graphs when on Graphs tab, above table when on Table tab */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2">
@@ -1166,7 +1148,6 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           </div>
         </div>
         <div className="p-4 space-y-4">
-          {/* Row 1: Lead filters */}
           <div className="flex flex-wrap items-end gap-3">
             {activeLeadsTab === 'table' && (
               <div className="flex flex-col gap-1.5 min-w-[200px] flex-1 max-w-xs">
@@ -1259,8 +1240,6 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
               </button>
             )}
           </div>
-
-          {/* Row 2: Date, amount, actions */}
           <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-slate-100">
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Date range</label>
@@ -1336,7 +1315,10 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
                 </button>
               )}
               <button
-                onClick={() => fetchLeads(bookingsPage)}
+                onClick={() => {
+                  if (activeLeadsTab === 'table') fetchLeads(bookingsPage);
+                  if (activeLeadsTab === 'graphs') setGraphsRefreshKey((k) => k + 1);
+                }}
                 disabled={refreshing}
                 className="h-9 px-4 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
@@ -1347,7 +1329,57 @@ export default function LeadsView({ variant = 'all', onOpenEmailCampaign, onOpen
           </div>
         </div>
       </div>
- 
+
+      {variant === 'qualified' && activeLeadsTab === 'graphs' && (
+        <Suspense fallback={<div className="flex items-center justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" /></div>}>
+          <QualifiedLeadsGraphs
+            key={graphsRefreshKey}
+            filters={{
+              fromDate,
+              toDate,
+              qualification: qualificationFilter,
+              status: statusFilter,
+              planName: planFilter,
+              utmSource: utmFilter,
+              minAmount,
+              maxAmount,
+            }}
+          />
+        </Suspense>
+      )}
+
+      {error && (
+        <div className="bg-orange-50 border border-orange-200  p-4 text-orange-700">
+          {error}
+        </div>
+      )}
+
+      {activeLeadsTab === 'table' && (selectedRows.size > 0 || (allSelectedBookingIds && allSelectedBookingIds.length > 0)) && (
+        <div className="bg-orange-50 border border-orange-200  px-4 py-3 flex items-center justify-between">
+          <span className="text-xs font-semibold text-orange-900">
+            {allSelectedBookingIds
+              ? `${allSelectedBookingIds.length} row${allSelectedBookingIds.length !== 1 ? 's' : ''} selected (all filtered)`
+              : `${selectedRows.size} row${selectedRows.size !== 1 ? 's' : ''} selected`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsAttachWorkflowsModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-violet-200 text-violet-700 rounded-lg bg-white hover:bg-violet-50 transition text-[11px] font-semibold"
+            >
+              <Workflow size={16} />
+              Attach Workflows ({selectedBookingIdsForBulk.length})
+            </button>
+            <button
+              onClick={handleBulkEmail}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition text-[11px] font-semibold"
+            >
+              <Send size={16} />
+              Send Email ({selectedBookingIdsForBulk.length})
+            </button>
+          </div>
+        </div>
+      )}
+
       {activeLeadsTab === 'table' && (
       <div className="overflow-hidden bg-white border border-slate-200">
         

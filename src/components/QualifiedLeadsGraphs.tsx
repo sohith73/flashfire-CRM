@@ -10,18 +10,10 @@ import {
   Pie,
   Cell,
   Legend,
-  AreaChart,
-  Area,
   LineChart,
   Line,
   CartesianGrid,
   ComposedChart,
-  RadarChart,
-  Radar,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Treemap,
 } from 'recharts';
 import { Loader2, TrendingUp, TrendingDown, Calendar, RefreshCcw } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
@@ -87,8 +79,20 @@ interface AnalyticsData {
 
 type DateRange = 'all' | '7d' | '30d' | '90d' | '6m' | '1y';
 
+export interface QualifiedLeadsGraphsFilters {
+  fromDate?: string;
+  toDate?: string;
+  qualification?: string;
+  status?: string;
+  planName?: string;
+  utmSource?: string;
+  minAmount?: string;
+  maxAmount?: string;
+}
+
 interface Props {
   className?: string;
+  filters?: QualifiedLeadsGraphsFilters;
 }
 
 // ── Shared tooltip style ───────────────────────────────────────────
@@ -162,7 +166,7 @@ const fmtDate = (d: string) => {
 };
 
 // ── Main Component ─────────────────────────────────────────────────
-export default function QualifiedLeadsGraphs({ className = '' }: Props) {
+export default function QualifiedLeadsGraphs({ className = '', filters = {} }: Props) {
   const { token } = useCrmAuth();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,7 +174,14 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
   const [dateRange, setDateRange] = useState<DateRange>('all');
   const [refreshing, setRefreshing] = useState(false);
 
+  // Use parent filters when provided; otherwise fall back to internal date range
   const dateParams = useMemo(() => {
+    if (filters.fromDate || filters.toDate) {
+      return {
+        fromDate: filters.fromDate,
+        toDate: filters.toDate,
+      };
+    }
     if (dateRange === 'all') return {};
     const to = new Date();
     const from = new Date();
@@ -180,7 +191,7 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
       fromDate: from.toISOString().split('T')[0],
       toDate: to.toISOString().split('T')[0],
     };
-  }, [dateRange]);
+  }, [dateRange, filters.fromDate, filters.toDate]);
 
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -189,6 +200,12 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
       const params = new URLSearchParams();
       if (dateParams.fromDate) params.append('fromDate', dateParams.fromDate);
       if (dateParams.toDate) params.append('toDate', dateParams.toDate);
+      if (filters.qualification && filters.qualification !== 'all') params.append('qualification', filters.qualification);
+      if (filters.status && filters.status !== 'all') params.append('status', filters.status);
+      if (filters.planName && filters.planName !== 'all') params.append('planName', filters.planName);
+      if (filters.utmSource && filters.utmSource !== 'all') params.append('utmSource', filters.utmSource);
+      if (filters.minAmount) params.append('minAmount', filters.minAmount);
+      if (filters.maxAmount) params.append('maxAmount', filters.maxAmount);
 
       const headers: HeadersInit = {};
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -204,7 +221,7 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token, dateParams]);
+  }, [token, dateParams, filters]);
 
   useEffect(() => {
     fetchAnalytics();
@@ -261,26 +278,35 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
 
   return (
     <div className={`space-y-6 ${className}`}>
-      {/* ── Header + filters ─────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">Lead Analytics</h2>
-          <p className="text-xs text-slate-500">MQL, SQL & Converted pipeline analysis</p>
+          <p className="text-xs text-slate-500">
+            {filters.fromDate || filters.toDate
+              ? 'Using filters from above (date, qualification, status, etc.)'
+              : 'MQL, SQL & Converted pipeline analysis'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          {(['all', '7d', '30d', '90d', '6m', '1y'] as DateRange[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => setDateRange(r)}
-              className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition ${
-                dateRange === r
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {r === 'all' ? 'All Time' : r.toUpperCase()}
-            </button>
-          ))}
+          {/* Only show internal date toggle when parent has NO date filters */}
+          {!filters.fromDate && !filters.toDate && (
+            <>
+              {(['all', '7d', '30d', '90d', '6m', '1y'] as DateRange[]).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setDateRange(r)}
+                  className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg transition ${
+                    dateRange === r
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {r === 'all' ? 'All Time' : r.toUpperCase()}
+                </button>
+              ))}
+            </>
+          )}
           <button
             onClick={fetchAnalytics}
             disabled={refreshing}
@@ -356,27 +382,9 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
         </ChartCard>
       </div>
 
-      {/* ── Row 2: Volume Trend + Conversion Rate Trend ──────── */}
+      {/* ── Row 2: Conversion Rate Trend ───────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 3. Lead Volume Trend (Stacked Area) */}
-        <ChartCard title="Lead Volume Trend" subtitle="Daily lead intake by qualification">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.volumeTrend} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtDate} interval="preserveStartEnd" />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} allowDecimals={false} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} labelFormatter={fmtDate} />
-                <Area type="monotone" dataKey="MQL" stackId="1" stroke={COLORS.mql} fill={COLORS.mqlLight} strokeWidth={1.5} />
-                <Area type="monotone" dataKey="SQL" stackId="1" stroke={COLORS.sql} fill={COLORS.sqlLight} strokeWidth={1.5} />
-                <Area type="monotone" dataKey="Converted" stackId="1" stroke={COLORS.converted} fill={COLORS.convertedLight} strokeWidth={1.5} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 4. Conversion Rate Trend (Line) */}
+        {/* Conversion Rate Trend (Line) */}
         <ChartCard title="Conversion Rate Trend" subtitle="Weekly SQL & Converted rates">
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -394,164 +402,7 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
         </ChartCard>
       </div>
 
-      {/* ── Row 3: Revenue ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 5. Revenue by Plan */}
-        <ChartCard title="Revenue by Plan" subtitle="Total revenue per pricing tier">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.revenueByPlan} margin={{ bottom: 5 }}>
-                <XAxis dataKey="plan" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtCurrency} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} formatter={(v: number) => `$${v.toLocaleString()}`} />
-                <Bar dataKey="revenue" radius={[6, 6, 0, 0]} fill={COLORS.revenue} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 6. Revenue Trend */}
-        <ChartCard title="Revenue Trend" subtitle="Monthly revenue over time">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data.revenueTrend} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtMonth} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtCurrency} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} formatter={(v: number) => `$${v.toLocaleString()}`} labelFormatter={fmtMonth} />
-                <Area type="monotone" dataKey="revenue" stroke={COLORS.revenue} fill="#FEF3C7" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 7. Avg Deal Size */}
-        <ChartCard title="Avg Deal Size" subtitle="Average payment per plan">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.avgDealSize} margin={{ bottom: 5 }}>
-                <XAxis dataKey="plan" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtCurrency} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  cursor={cursorStyle}
-                  formatter={(v: number, name: string) => {
-                    if (name === 'avgDeal') return [`$${v}`, 'Avg'];
-                    return [`$${v}`, name];
-                  }}
-                />
-                <Bar dataKey="avgDeal" radius={[6, 6, 0, 0]} fill={COLORS.emerald} name="Avg Deal" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* ── Row 4: Source Analysis ────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 8. Leads by UTM Source (Stacked Bar) */}
-        <ChartCard title="Leads by Source" subtitle="UTM source breakdown with qualification">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.sourceBreakdown.slice(0, 8)} layout="vertical" margin={{ left: 10 }}>
-                <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                <YAxis type="category" dataKey="source" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} width={100} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} />
-                <Bar dataKey="mql" stackId="a" fill={COLORS.mql} name="MQL" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="sql" stackId="a" fill={COLORS.sql} name="SQL" />
-                <Bar dataKey="converted" stackId="a" fill={COLORS.converted} name="Converted" radius={[0, 6, 6, 0]} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 9. Conversion Rate by Source */}
-        <ChartCard title="Conversion Rate by Source" subtitle="Which sources convert best (min 3 leads)">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.sourceConversion} margin={{ bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="source" tickLine={false} axisLine={false} tick={{ fontSize: 9 }} angle={-30} textAnchor="end" height={50} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} unit="%" />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} formatter={(v: number) => `${v}%`} />
-                <Bar dataKey="sqlRate" fill={COLORS.sql} name="SQL Rate" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="conversionRate" fill={COLORS.converted} name="Converted Rate" radius={[4, 4, 0, 0]} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* ── Row 5: Lead Source Type + Plan Analysis ───────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 10. Lead Source Type (Pie) */}
-        <ChartCard title="Lead Source Type" subtitle="Calendly vs Meta vs Manual etc.">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.leadSourceType.map(s => ({ ...s, label: SOURCE_LABELS[s.source] || s.source }))}
-                  dataKey="total"
-                  nameKey="label"
-                  innerRadius={40}
-                  outerRadius={75}
-                  paddingAngle={3}
-                >
-                  {data.leadSourceType.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 11. Plan Distribution */}
-        <ChartCard title="Plan Distribution" subtitle="Selected plans across all leads">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.planDistribution}
-                  dataKey="count"
-                  nameKey="plan"
-                  innerRadius={40}
-                  outerRadius={75}
-                  paddingAngle={3}
-                >
-                  {data.planDistribution.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 12. Plan Conversion Rates */}
-        <ChartCard title="Plan Conversion Rates" subtitle="Which plan converts best">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.planConversion} margin={{ bottom: 5 }}>
-                <XAxis dataKey="plan" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} unit="%" />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} formatter={(v: number) => `${v}%`} />
-                <Bar dataKey="sqlRate" fill={COLORS.sql} name="SQL Rate" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="paidRate" fill={COLORS.converted} name="Paid Rate" radius={[4, 4, 0, 0]} />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* ── Row 6: Timing Analysis ───────────────────────────── */}
+      {/* ── Row 3: Timing Analysis ───────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 13. Leads by Day of Week */}
         <ChartCard title="Leads by Day of Week" subtitle="Which days generate the most leads">
@@ -582,99 +433,6 @@ export default function QualifiedLeadsGraphs({ className = '' }: Props) {
                 <Bar dataKey="count" fill={COLORS.cyan} name="Leads" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* ── Row 7: Lead Aging + Velocity ─────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 15. Lead Aging */}
-        <ChartCard title="Lead Aging" subtitle="How long MQL leads sit without progressing">
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.leadAging} margin={{ bottom: 5 }}>
-                <XAxis dataKey="bucket" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
-                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} allowDecimals={false} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} />
-                <Bar dataKey="count" name="Stale MQL Leads" radius={[6, 6, 0, 0]}>
-                  {data.leadAging.map((_, i) => (
-                    <Cell key={i} fill={i < 2 ? COLORS.emerald : i < 4 ? COLORS.amber : COLORS.rose} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 16. Conversion Velocity */}
-        <ChartCard title="Conversion Velocity" subtitle="Avg days from lead to payment by month">
-          <div className="h-64">
-            {data.velocity.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={data.velocity} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtMonth} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10 }} unit="d" />
-                  <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} formatter={(v: number) => `${v} days`} labelFormatter={fmtMonth} />
-                  <Area type="monotone" dataKey="maxDays" fill="#FEE2E2" stroke="none" name="Max" />
-                  <Area type="monotone" dataKey="minDays" fill="#FFFFFF" stroke="none" name="Min" />
-                  <Line type="monotone" dataKey="avgDays" stroke={COLORS.violet} strokeWidth={2.5} dot={{ r: 3 }} name="Avg Days" />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-full text-sm text-slate-400">No velocity data available</div>
-            )}
-          </div>
-        </ChartCard>
-      </div>
-
-      {/* ── Row 8: Month-over-Month + BDA Performance ────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 17. Month-over-Month Comparison */}
-        <ChartCard title="Monthly Comparison" subtitle="MQL, SQL, Converted & Revenue by month">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data.monthlyComparison} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtMonth} />
-                <YAxis yAxisId="left" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} allowDecimals={false} />
-                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} tickFormatter={fmtCurrency} />
-                <Tooltip contentStyle={tooltipStyle} cursor={cursorStyle} labelFormatter={fmtMonth} />
-                <Bar yAxisId="left" dataKey="mql" stackId="a" fill={COLORS.mqlLight} name="MQL" />
-                <Bar yAxisId="left" dataKey="sql" stackId="a" fill={COLORS.sqlLight} name="SQL" />
-                <Bar yAxisId="left" dataKey="converted" stackId="a" fill={COLORS.convertedLight} name="Converted" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="revenue" stroke={COLORS.revenue} strokeWidth={2.5} dot={{ r: 3 }} name="Revenue" />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-
-        {/* 18. BDA Performance */}
-        <ChartCard title="BDA Performance" subtitle="Claims, conversions & revenue per rep">
-          <div className="h-72">
-            {data.bdaPerformance.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.bdaPerformance.slice(0, 10)} layout="vertical" margin={{ left: 10 }}>
-                  <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                  <YAxis type="category" dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} width={90} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    cursor={cursorStyle}
-                    formatter={(v: number, name: string) => {
-                      if (name === 'revenue') return [`$${v.toLocaleString()}`, 'Revenue'];
-                      return [v, name];
-                    }}
-                  />
-                  <Bar dataKey="claimed" fill={COLORS.mqlLight} name="Claimed" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="completed" fill={COLORS.sql} name="Completed" />
-                  <Bar dataKey="converted" fill={COLORS.converted} name="Converted" radius={[0, 4, 4, 0]} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-full text-sm text-slate-400">No BDA data available</div>
-            )}
           </div>
         </ChartCard>
       </div>
