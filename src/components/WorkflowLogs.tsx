@@ -22,7 +22,7 @@ interface WorkflowLog {
   logId: string;
   workflowId: string;
   workflowName?: string;
-  triggerAction: 'no-show' | 'complete' | 'cancel' | 're-schedule';
+  triggerAction: 'not-scheduled' | 'no-show' | 'complete' | 'cancel' | 're-schedule' | 'custom' | 'paid';
   bookingId: string;
   clientEmail: string;
   clientName?: string;
@@ -100,20 +100,26 @@ export default function WorkflowLogs() {
 
   const getActionLabel = (action: string) => {
     const labels: Record<string, string> = {
+      'not-scheduled': 'Not Scheduled',
       'no-show': 'No Show',
       'complete': 'Complete',
       'cancel': 'Cancel',
       're-schedule': 'Re-schedule',
+      'custom': 'Custom',
+      'paid': 'Paid',
     };
-    return labels[action] || action;
+    return labels[action] || action || '—';
   };
 
   const getActionColor = (action: string) => {
     const colors: Record<string, string> = {
+      'not-scheduled': 'bg-blue-100 text-blue-700',
       'no-show': 'bg-rose-100 text-rose-700',
       'complete': 'bg-green-100 text-green-700',
       'cancel': 'bg-red-100 text-red-700',
       're-schedule': 'bg-amber-100 text-amber-700',
+      'custom': 'bg-violet-100 text-violet-700',
+      'paid': 'bg-teal-100 text-teal-700',
     };
     return colors[action] || 'bg-slate-100 text-slate-700';
   };
