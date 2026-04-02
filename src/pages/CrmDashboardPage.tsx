@@ -64,7 +64,7 @@ const TAB_CONFIG: Array<{
   { tab: 'workflows', permission: 'workflows', label: 'Workflows', icon: Workflow },
   { tab: 'leads', permission: 'leads', label: 'Leads', icon: Users },
   { tab: 'qualified_leads', permission: 'leads', label: 'Qualified Leads', icon: Filter },
-  { tab: 'meta_leads', permission: 'leads', label: 'Meta Leads', icon: Facebook },
+  { tab: 'meta_leads', permission: 'meta_leads', label: 'Meta Leads', icon: Facebook },
   { tab: 'claim_leads', permission: 'claim_leads', label: 'Claim Your Leads', icon: UserCheck },
   { tab: 'meeting_links', permission: 'meeting_links', label: 'Meeting Info', icon: Video },
 ];

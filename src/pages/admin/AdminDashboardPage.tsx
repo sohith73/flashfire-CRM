@@ -13,6 +13,7 @@ type CrmPermission =
   | 'all_data'
   | 'workflows'
   | 'leads'
+  | 'meta_leads'
   | 'claim_leads'
   | 'meeting_links'
   | 'bda_admin';
@@ -25,6 +26,7 @@ const PERMISSIONS: Array<{ key: CrmPermission; label: string; description: strin
   { key: 'all_data', label: 'All Data', description: 'Unified data view + notes/actions' },
   { key: 'workflows', label: 'Workflows', description: 'Workflow builder + logs' },
   { key: 'leads', label: 'Leads', description: 'MQL / SQL / Converted management + revenue tracking' },
+  { key: 'meta_leads', label: 'Meta Leads', description: 'Facebook & Instagram Lead Ads (dedicated tab)' },
   { key: 'claim_leads', label: 'Claim Leads', description: 'BDA lead claiming and management' },
   { key: 'meeting_links', label: 'Meeting Info', description: 'Meeting recordings and Google Drive video URLs' },
   { key: 'bda_admin', label: 'BDA Admin', description: 'Approve BDA claims and review notifications' },
