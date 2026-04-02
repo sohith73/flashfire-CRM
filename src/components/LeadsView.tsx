@@ -43,6 +43,42 @@ const QualifiedLeadsGraphs = lazy(() => import('./QualifiedLeadsGraphs'));
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
+/** Calendar day yyyy-MM-dd for Meta parity: Meta export time when present, else booking ingest time. */
+function getMetaComparableDay(booking: { metaRawData?: { created_time?: string }; bookingCreatedAt: string }): string {
+  const raw = booking.metaRawData?.created_time?.trim();
+  if (raw) {
+    try {
+      return format(parseISO(raw), 'yyyy-MM-dd');
+    } catch {
+      /* fall through */
+    }
+  }
+  return format(parseISO(booking.bookingCreatedAt), 'yyyy-MM-dd');
+}
+
+function metaLeadInUserDateRange(
+  booking: { metaRawData?: { created_time?: string }; bookingCreatedAt: string },
+  fromDate: string,
+  toDate: string
+): boolean {
+  const day = getMetaComparableDay(booking);
+  if (fromDate && day < fromDate) return false;
+  if (toDate && day > toDate) return false;
+  return true;
+}
+
+function metaLeadSortTime(booking: { metaRawData?: { created_time?: string }; bookingCreatedAt: string }): number {
+  const raw = booking.metaRawData?.created_time?.trim();
+  if (raw) {
+    try {
+      return parseISO(raw).getTime();
+    } catch {
+      /* fall through */
+    }
+  }
+  return parseISO(booking.bookingCreatedAt).getTime();
+}
+
 type PaymentPlan = {
   name: PlanName;
   price: number;
@@ -99,6 +135,8 @@ interface Booking {
   leadSource?: 'calendly' | 'meta_lead_ad' | 'manual' | 'frontend_direct' | 'bulk_import';
   metaLeadId?: string | null;
   metaFormName?: string;
+  /** Meta Lead Ads original created_time — aligns date filter with Meta export when present */
+  metaRawData?: { created_time?: string };
   claimedBy?: {
     email: string;
     name: string;
@@ -113,7 +151,7 @@ interface LeadsViewProps {
   onNavigateToWorkflows?: () => void;
   defaultUtmSource?: string; // Optional: Set default UTM source filter (e.g., 'meta_lead_ad')
   hideSourceFilter?: boolean; // Optional: Hide the source filter dropdown
-  /** When true, date range uses bookingCreatedAt (calendar date). Sent as dateRangeField=bookingCreatedAt to /api/leads/* — API must honor it. */
+  /** When true, Meta tab date range matches Meta export: client filters by metaRawData.created_time, else bookingCreatedAt (API often filters by meeting time). */
   dateRangeOnBookingCreatedAt?: boolean;
 }
 
@@ -181,6 +219,10 @@ export default function LeadsView({
   const [statusDropdownPosition, setStatusDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [graphsRefreshKey, setGraphsRefreshKey] = useState(0);
 
+  /** Full Meta date–filtered list + signature so we paginate locally without re-fetching (matches Meta UI export). */
+  const metaDateFilteredFullRef = useRef<Booking[] | null>(null);
+  const metaDateFilterSigRef = useRef<string>('');
+
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now().toString();
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -214,69 +256,152 @@ export default function LeadsView({
   };
 
   const fetchLeads = useCallback(async (page: number = 1) => {
+    const metaClientDateMode = dateRangeOnBookingCreatedAt && (fromDate || toDate);
+    const metaSig = metaClientDateMode
+      ? JSON.stringify({
+          fromDate,
+          toDate,
+          utmFilter,
+          search,
+          statusFilter,
+          planFilter,
+          qualificationFilter,
+          variant,
+          minAmount,
+          maxAmount,
+        })
+      : '';
+
     try {
       setRefreshing(true);
       setError(null);
 
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: '50',
-      });
-
-      if (utmFilter !== 'all') {
-        params.append('utmSource', utmFilter);
-      }
-      if (planFilter !== 'all') {
-        params.append('planName', planFilter);
-      }
-      if (variant === 'qualified' && qualificationFilter !== 'all') {
-        params.append('qualification', qualificationFilter);
-      }
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
-      if (search) {
-        params.append('search', search);
-      }
-      if (fromDate) {
-        params.append('fromDate', fromDate);
-      }
-      if (toDate) {
-        params.append('toDate', toDate);
-      }
-      if (dateRangeOnBookingCreatedAt && (fromDate || toDate)) {
-        params.append('dateRangeField', 'bookingCreatedAt');
-      }
-      if (minAmount) {
-        params.append('minAmount', minAmount);
-      }
-      if (maxAmount) {
-        params.append('maxAmount', maxAmount);
-      }
-
-      const headers: HeadersInit = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch(`${API_BASE_URL}/api/leads/paginated?${params}`, { headers });
-      const data = await safeJsonParse(response);
-
-      if (data.success) {
-        setBookings(data.data);
-        setBookingsPagination(data.pagination);
-        setBookingsPage(page);
-        if (data.stats) {
-          setTotalRevenue(data.stats.totalRevenue || 0);
-          setPlanBreakdown(data.stats.planBreakdown || []);
-          setMqlCount(data.stats.mqlCount ?? 0);
-          setSqlCount(data.stats.sqlCount ?? 0);
-          setConvertedCount(data.stats.convertedCount ?? 0);
-          setStatusBreakdown((data.stats as { statusBreakdown?: Record<string, number> }).statusBreakdown || {});
-          setMonthlyStatusBreakdown((data.stats as { monthlyStatusBreakdown?: Array<Record<string, number | string>> }).monthlyStatusBreakdown || []);
-        } else {
-          setStatusBreakdown({});
-          setMonthlyStatusBreakdown([]);
+      // Meta tab + date: API often applies range to meeting time. Fetch all Meta leads without date, then filter by Meta created_time (else bookingCreatedAt) to match Meta export.
+      if (metaClientDateMode) {
+        if (metaDateFilteredFullRef.current && metaDateFilterSigRef.current === metaSig && page >= 1) {
+          const full = metaDateFilteredFullRef.current;
+          const totalPages = Math.max(1, Math.ceil(full.length / 50));
+          const safePage = Math.min(page, totalPages);
+          setBookings(full.slice((safePage - 1) * 50, safePage * 50));
+          setBookingsPagination({ total: full.length, pages: totalPages, limit: 50, page: safePage });
+          setBookingsPage(safePage);
+          setRefreshing(false);
+          setLoading(false);
+          return;
         }
+
+        const headers: HeadersInit = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const allRows: Booking[] = [];
+        let p = 1;
+        let totalApiPages = 1;
+        const maxPages = 200;
+
+        do {
+          const params = new URLSearchParams({ page: String(p), limit: '50' });
+          if (utmFilter !== 'all') params.append('utmSource', utmFilter);
+          if (planFilter !== 'all') params.append('planName', planFilter);
+          if (variant === 'qualified' && qualificationFilter !== 'all') {
+            params.append('qualification', qualificationFilter);
+          }
+          if (statusFilter !== 'all') params.append('status', statusFilter);
+          if (search) params.append('search', search);
+          if (minAmount) params.append('minAmount', minAmount);
+          if (maxAmount) params.append('maxAmount', maxAmount);
+
+          const response = await fetch(`${API_BASE_URL}/api/leads/paginated?${params}`, { headers });
+          const data = await safeJsonParse(response);
+          if (!data.success) throw new Error(data.message || 'Failed to fetch leads');
+          const chunk = (data.data || []) as Booking[];
+          allRows.push(...chunk);
+          totalApiPages = data.pagination?.pages ?? 1;
+          if (chunk.length === 0) break;
+          p += 1;
+        } while (p <= totalApiPages && p <= maxPages);
+
+        const fd = fromDate || '1970-01-01';
+        const td = toDate || '2099-12-31';
+        const filtered = allRows
+          .filter((b) => metaLeadInUserDateRange(b, fd, td))
+          .sort((a, b) => metaLeadSortTime(b) - metaLeadSortTime(a));
+
+        metaDateFilteredFullRef.current = filtered;
+        metaDateFilterSigRef.current = metaSig;
+
+        const totalPages = Math.max(1, Math.ceil(filtered.length / 50));
+        const safePage = Math.min(page, totalPages);
+        setBookings(filtered.slice((safePage - 1) * 50, safePage * 50));
+        setBookingsPagination({ total: filtered.length, pages: totalPages, limit: 50, page: safePage });
+        setBookingsPage(safePage);
+        setTotalRevenue(0);
+        setPlanBreakdown([]);
+        setMqlCount(0);
+        setSqlCount(0);
+        setConvertedCount(0);
+        setStatusBreakdown({});
+        setMonthlyStatusBreakdown([]);
       } else {
-        throw new Error(data.message || 'Failed to fetch leads');
+        metaDateFilteredFullRef.current = null;
+        metaDateFilterSigRef.current = '';
+
+        const params = new URLSearchParams({
+          page: page.toString(),
+          limit: '50',
+        });
+
+        if (utmFilter !== 'all') {
+          params.append('utmSource', utmFilter);
+        }
+        if (planFilter !== 'all') {
+          params.append('planName', planFilter);
+        }
+        if (variant === 'qualified' && qualificationFilter !== 'all') {
+          params.append('qualification', qualificationFilter);
+        }
+        if (statusFilter !== 'all') {
+          params.append('status', statusFilter);
+        }
+        if (search) {
+          params.append('search', search);
+        }
+        if (fromDate) {
+          params.append('fromDate', fromDate);
+        }
+        if (toDate) {
+          params.append('toDate', toDate);
+        }
+        if (minAmount) {
+          params.append('minAmount', minAmount);
+        }
+        if (maxAmount) {
+          params.append('maxAmount', maxAmount);
+        }
+
+        const headers: HeadersInit = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const response = await fetch(`${API_BASE_URL}/api/leads/paginated?${params}`, { headers });
+        const data = await safeJsonParse(response);
+
+        if (data.success) {
+          setBookings(data.data);
+          setBookingsPagination(data.pagination);
+          setBookingsPage(page);
+          if (data.stats) {
+            setTotalRevenue(data.stats.totalRevenue || 0);
+            setPlanBreakdown(data.stats.planBreakdown || []);
+            setMqlCount(data.stats.mqlCount ?? 0);
+            setSqlCount(data.stats.sqlCount ?? 0);
+            setConvertedCount(data.stats.convertedCount ?? 0);
+            setStatusBreakdown((data.stats as { statusBreakdown?: Record<string, number> }).statusBreakdown || {});
+            setMonthlyStatusBreakdown((data.stats as { monthlyStatusBreakdown?: Array<Record<string, number | string>> }).monthlyStatusBreakdown || []);
+          } else {
+            setStatusBreakdown({});
+            setMonthlyStatusBreakdown([]);
+          }
+        } else {
+          throw new Error(data.message || 'Failed to fetch leads');
+        }
       }
     } catch (err) {
       console.error('Error fetching leads:', err);
@@ -337,6 +462,8 @@ export default function LeadsView({
     const handleBookingUpdate = (event: CustomEvent) => {
       const { bookingId } = event.detail;
       if (bookingId) {
+        metaDateFilteredFullRef.current = null;
+        metaDateFilterSigRef.current = '';
         fetchLeads(bookingsPage);
       }
     };
@@ -393,18 +520,13 @@ export default function LeadsView({
           return false;
         }
       }
-      if (dateRangeOnBookingCreatedAt && (fromDate || toDate)) {
-        const rowDay = format(parseISO(row.createdAt), 'yyyy-MM-dd');
-        if (fromDate && rowDay < fromDate) return false;
-        if (toDate && rowDay > toDate) return false;
-      }
       return true;
     }).sort((a, b) => {
       const aDate = a.scheduledTime ? parseISO(a.scheduledTime) : parseISO(a.createdAt);
       const bDate = b.scheduledTime ? parseISO(b.scheduledTime) : parseISO(b.createdAt);
       return bDate.getTime() - aDate.getTime();
     });
-  }, [bookings, dateRangeOnBookingCreatedAt, fromDate, toDate]);
+  }, [bookings]);
 
   // Use API statusBreakdown when available (correct full-filtered counts); fallback to filteredData for backwards compat
   const statusStats = useMemo(() => {
@@ -497,6 +619,17 @@ export default function LeadsView({
     }
     setSelectAllLoading(true);
     try {
+      if (dateRangeOnBookingCreatedAt && (fromDate || toDate) && metaDateFilteredFullRef.current?.length) {
+        const ids = metaDateFilteredFullRef.current.map((b) => b.bookingId).filter(Boolean);
+        if (ids.length > 0) {
+          setAllSelectedBookingIds(ids);
+          setSelectedRows(new Set());
+        } else {
+          showToast('No booking IDs to select', 'error');
+        }
+        return;
+      }
+
       const params = new URLSearchParams();
       if (utmFilter !== 'all') params.append('utmSource', utmFilter);
       if (planFilter !== 'all') params.append('planName', planFilter);
@@ -505,9 +638,6 @@ export default function LeadsView({
       if (search) params.append('search', search);
       if (fromDate) params.append('fromDate', fromDate);
       if (toDate) params.append('toDate', toDate);
-      if (dateRangeOnBookingCreatedAt && (fromDate || toDate)) {
-        params.append('dateRangeField', 'bookingCreatedAt');
-      }
       if (minAmount) params.append('minAmount', minAmount);
       if (maxAmount) params.append('maxAmount', maxAmount);
       const headers: HeadersInit = {};
@@ -1047,7 +1177,7 @@ export default function LeadsView({
         <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
           <h2 className="text-base font-semibold text-slate-900 mb-1">
             {dateRangeOnBookingCreatedAt
-              ? `Leads by booking created date (${dateRangeDisplay})`
+              ? `Meta lead time window (${dateRangeDisplay})`
               : `Meetings from ${dateRangeDisplay}`}
           </h2>
           <p className="text-xs text-slate-500 mb-4">Monthly breakdown by status • Hover for details</p>
@@ -1282,8 +1412,9 @@ export default function LeadsView({
                 />
               </div>
               {dateRangeOnBookingCreatedAt && (
-                <p className="text-[10px] text-slate-500 max-w-[min(100%,22rem)]">
-                  Filters by <span className="font-medium text-slate-600">bookingCreatedAt</span> (calendar day in your timezone).
+                <p className="text-[10px] text-slate-500 max-w-[min(100%,26rem)]">
+                  Matches Meta export: uses <span className="font-medium text-slate-600">meta created_time</span> when present, else{' '}
+                  <span className="font-medium text-slate-600">bookingCreatedAt</span> (local calendar day). Loads all Meta leads once, then filters in the browser.
                 </p>
               )}
             </div>
@@ -1324,6 +1455,8 @@ export default function LeadsView({
               {(fromDate || toDate || searchInput || planFilter !== 'all' || (utmFilter !== 'all' && !hideSourceFilter) || statusFilter !== 'all' || qualificationFilter !== 'all' || minAmount || maxAmount) && (
                 <button
                   onClick={() => {
+                    metaDateFilteredFullRef.current = null;
+                    metaDateFilterSigRef.current = '';
                     setFromDate('');
                     setToDate('');
                     setPlanFilter('all');
@@ -1344,6 +1477,8 @@ export default function LeadsView({
               )}
               <button
                 onClick={() => {
+                  metaDateFilteredFullRef.current = null;
+                  metaDateFilterSigRef.current = '';
                   if (activeLeadsTab === 'table') fetchLeads(bookingsPage);
                   if (activeLeadsTab === 'graphs') setGraphsRefreshKey((k) => k + 1);
                 }}
