@@ -769,9 +769,74 @@ export default function LeadsView({
     return map;
   }, [bookings]);
 
+  const confirmNoShowWithFutureMeeting = useCallback(
+    async (bookingId: string) => {
+      const currentBooking = bookingsById.get(bookingId);
+      const clientEmail = currentBooking?.clientEmail?.trim();
+      if (!clientEmail) return true;
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/campaign-bookings/email/${encodeURIComponent(clientEmail.toLowerCase())}`
+        );
+        const data = await safeJsonParse(response);
+        const relatedBookings = Array.isArray(data?.data) ? data.data : [];
+        const now = Date.now();
+
+        const futureMeetings = relatedBookings
+          .filter((booking: Booking) => {
+            if (!booking || booking.bookingId === bookingId) return false;
+            if (!booking.scheduledEventStartTime) return false;
+            const startTime = new Date(booking.scheduledEventStartTime).getTime();
+            if (Number.isNaN(startTime) || startTime <= now) return false;
+            return booking.bookingStatus === 'scheduled' || booking.bookingStatus === 'rescheduled';
+          })
+          .sort(
+            (a: Booking, b: Booking) =>
+              new Date(a.scheduledEventStartTime || '').getTime() -
+              new Date(b.scheduledEventStartTime || '').getTime()
+          );
+
+        if (futureMeetings.length === 0) return true;
+
+        const meetingLines = futureMeetings
+          .slice(0, 3)
+          .map((meeting: Booking) => {
+            const meetingTime = meeting.scheduledEventStartTime
+              ? format(parseISO(meeting.scheduledEventStartTime), 'MMM d, yyyy h:mm a')
+              : 'Unknown time';
+            const label = statusLabels[meeting.bookingStatus] || meeting.bookingStatus;
+            return `- ${meetingTime} (${label})`;
+          })
+          .join('\n');
+
+        const remainingCount = futureMeetings.length - 3;
+        const extraLine = remainingCount > 0 ? `\n- +${remainingCount} more future meeting(s)` : '';
+
+        return window.confirm(
+          `This client already has ${futureMeetings.length} future meeting(s):\n\n${meetingLines}${extraLine}\n\nAre you sure you want to mark this booking as No Show?`
+        );
+      } catch (error) {
+        console.warn('No-show future meeting check failed, proceeding anyway:', error);
+        return true;
+      }
+    },
+    [bookingsById]
+  );
+
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption) => {
     try {
       setUpdatingBookingId(bookingId);
+
+      if (status === 'no-show') {
+        const allowNoShow = await confirmNoShowWithFutureMeeting(bookingId);
+        if (!allowNoShow) {
+          setUpdatingBookingId(null);
+          setPlanPickerFor(null);
+          setOpenStatusDropdown(null);
+          return;
+        }
+      }
 
       // Check if workflows need plan details for this status (fail gracefully if endpoint doesn't exist)
       try {
