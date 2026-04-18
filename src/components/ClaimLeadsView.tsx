@@ -4,6 +4,7 @@ import { useCrmAuth } from '../auth/CrmAuthContext';
 import { usePlanConfig, type PlanName } from '../context/PlanConfigContext';
 import { format, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import BdaPerformanceView from './BdaPerformanceView';
+import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -385,6 +386,14 @@ export default function ClaimLeadsView() {
     setSuccess(null);
 
     try {
+      if (newStatus === 'completed') {
+        const timeRule = validatePostMeetingBookingStatus(lead.scheduledEventStartTime, newStatus);
+        if (!timeRule.ok) {
+          setError(timeRule.message);
+          return;
+        }
+      }
+
       const currency = formData.paymentPlan?.currency || 'USD';
       const allLines: PaymentBreakdownLine[] = [];
       if (formData.paymentPlan?.name && (formData.paymentPlan?.price ?? 0) > 0) {

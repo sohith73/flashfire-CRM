@@ -20,6 +20,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import NotesModal from './NotesModal';
+import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import {
   Area,
   AreaChart,
@@ -497,6 +498,19 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption) => {
     try {
       setUpdatingBookingId(bookingId);
+
+      const bookingForTime = bookings.find((b) => b.bookingId === bookingId);
+      const timeRule = validatePostMeetingBookingStatus(
+        bookingForTime?.scheduledEventStartTime,
+        status
+      );
+      if (!timeRule.ok) {
+        showToast(timeRule.message, 'error');
+        setUpdatingBookingId(null);
+        setPlanPickerFor(null);
+        return;
+      }
+
       const planPayload = plan
         ? {
             name: plan.key,

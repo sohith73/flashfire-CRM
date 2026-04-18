@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Loader2, TrendingUp, Users, CheckCircle2, BarChart3, ArrowLeft, X, Mail, Phone, Calendar, DollarSign, FileText, Trash2, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { validatePostMeetingBookingStatus } from '../../utils/postMeetingStatus';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 const ADMIN_TOKEN_KEY = 'flashfire_crm_admin_token';
@@ -371,6 +372,15 @@ export default function BdaAnalysisPage() {
     setEditSaving(true);
     setEditError(null);
     try {
+      const timeRule = validatePostMeetingBookingStatus(
+        editLead.scheduledEventStartTime,
+        editStatus
+      );
+      if ((editStatus === 'completed' || editStatus === 'no-show') && !timeRule.ok) {
+        setEditError(timeRule.message);
+        return;
+      }
+
       const body: { status: string; plan?: { name: string; price: number } } = { status: editStatus };
       if (planRequired && editPlanName !== 'all' && editAmount) {
         body.plan = { name: editPlanName, price: parseFloat(editAmount) || 0 };
