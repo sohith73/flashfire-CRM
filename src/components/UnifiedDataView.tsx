@@ -35,6 +35,7 @@ import type { EmailPrefillPayload } from '../types/emailPrefill';
 import {
   clearAllCache,
 } from '../utils/dataCache';
+import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 
 import NotesModal from './NotesModal';
 import InsertDataModal, { type InsertDataFormData } from './InsertDataModal';
@@ -763,6 +764,19 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   const handleStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption) => {
     try {
       setUpdatingBookingId(bookingId);
+
+      const bookingForTime = bookings.find((b) => b.bookingId === bookingId);
+      const timeRule = validatePostMeetingBookingStatus(
+        bookingForTime?.scheduledEventStartTime,
+        status
+      );
+      if (!timeRule.ok) {
+        showToast(timeRule.message, 'error');
+        setUpdatingBookingId(null);
+        setPlanPickerFor(null);
+        setOpenStatusDropdown(null);
+        return;
+      }
       
       // Check if workflows need plan details for this status
       const checkResponse = await fetch(`${API_BASE_URL}/api/workflows/check-plan-details?action=${status}`);
@@ -800,6 +814,19 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   const performStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption, planDetails?: PlanDetailsData) => {
     try {
       setUpdatingBookingId(bookingId);
+
+      const bookingForTime = bookings.find((b) => b.bookingId === bookingId);
+      const timeRule = validatePostMeetingBookingStatus(
+        bookingForTime?.scheduledEventStartTime,
+        status
+      );
+      if (!timeRule.ok) {
+        showToast(timeRule.message, 'error');
+        setUpdatingBookingId(null);
+        setPlanPickerFor(null);
+        setOpenStatusDropdown(null);
+        return;
+      }
       
       // Use planDetails if provided, otherwise use plan
       const planPayload = planDetails

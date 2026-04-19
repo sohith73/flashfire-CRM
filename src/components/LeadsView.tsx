@@ -33,6 +33,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTo
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
+import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanConfigContext';
 import NotesModal from './NotesModal';
 import FollowUpModal, { type FollowUpData } from './FollowUpModal';
@@ -127,6 +128,8 @@ interface Booking {
   bookingStatus: BookingStatus;
   qualification?: Qualification;
   utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
   paymentPlan?: PaymentPlan;
   meetingNotes?: string;
   anythingToKnow?: string;
@@ -495,6 +498,8 @@ export default function LeadsView({
         createdAt: booking.bookingCreatedAt,
         scheduledTime: booking.scheduledEventStartTime,
         source: booking.utmSource || 'direct',
+        medium: booking.utmMedium || '',
+        campaign: booking.utmCampaign || '',
         status: booking.bookingStatus,
         qualification: booking.qualification ?? (booking.bookingStatus === 'paid' ? 'Converted' : booking.bookingStatus === 'completed' ? 'SQL' : 'MQL'),
         meetLink: booking.googleMeetUrl || (booking.calendlyMeetLink && booking.calendlyMeetLink !== 'Not Provided' ? booking.calendlyMeetLink : undefined),
@@ -828,6 +833,19 @@ export default function LeadsView({
     try {
       setUpdatingBookingId(bookingId);
 
+      const bookingForTime = bookingsById.get(bookingId);
+      const timeRule = validatePostMeetingBookingStatus(
+        bookingForTime?.scheduledEventStartTime,
+        status
+      );
+      if (!timeRule.ok) {
+        showToast(timeRule.message, 'error');
+        setUpdatingBookingId(null);
+        setPlanPickerFor(null);
+        setOpenStatusDropdown(null);
+        return;
+      }
+
       if (status === 'no-show') {
         const allowNoShow = await confirmNoShowWithFutureMeeting(bookingId);
         if (!allowNoShow) {
@@ -879,6 +897,19 @@ export default function LeadsView({
   const performStatusUpdate = async (bookingId: string, status: BookingStatus, plan?: PlanOption, planDetails?: PlanDetailsData) => {
     try {
       setUpdatingBookingId(bookingId);
+
+      const bookingForTime = bookings.find((b) => b.bookingId === bookingId);
+      const timeRule = validatePostMeetingBookingStatus(
+        bookingForTime?.scheduledEventStartTime,
+        status
+      );
+      if (!timeRule.ok) {
+        showToast(timeRule.message, 'error');
+        setUpdatingBookingId(null);
+        setPlanPickerFor(null);
+        setOpenStatusDropdown(null);
+        return;
+      }
 
       // Use planDetails if provided, otherwise use plan
       const planPayload = planDetails
@@ -1750,6 +1781,16 @@ export default function LeadsView({
                         ) : (
                           <span className="text-slate-400 text-[9px]">—</span>
                         )}
+                        {row.medium ? (
+                          <span className="text-[8px] text-slate-500 truncate" title={`Medium: ${row.medium}`}>
+                            M: {row.medium}
+                          </span>
+                        ) : null}
+                        {row.campaign ? (
+                          <span className="text-[8px] text-slate-500 truncate" title={`Campaign: ${row.campaign}`}>
+                            C: {row.campaign}
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-1 py-1.5">
@@ -2276,13 +2317,18 @@ export default function LeadsView({
                 const StatusIcon = statusIcon;
                 const isPaidOption = status === 'paid';
                 const isPlanOpen = isPaidOption && planPickerFor === openRow.bookingId;
+                const postMeetingCheck = validatePostMeetingBookingStatus(openRow.scheduledTime, status);
+                const postMeetingBlocked = !postMeetingCheck.ok;
                 return (
                   <div key={status} className="border-b last:border-b-0 border-slate-100">
                     <button
                       type="button"
+                      disabled={postMeetingBlocked}
+                      title={postMeetingBlocked ? postMeetingCheck.message : undefined}
                       onClick={() => {
                         const booking = bookingsById.get(openRow.bookingId!);
                         if (!booking) return;
+                        if (postMeetingBlocked) return;
                         if (isPaidOption) {
                           setPlanPickerFor(openRow.bookingId!);
                           return;
@@ -2291,7 +2337,7 @@ export default function LeadsView({
                         handleStatusUpdate(booking.bookingId, status);
                         setOpenStatusDropdown(null);
                       }}
-                      className="w-full text-left px-2 py-1.5 text-[9px] hover:bg-slate-50 transition flex items-center gap-1.5 group"
+                      className={`w-full text-left px-2 py-1.5 text-[9px] transition flex items-center gap-1.5 group ${postMeetingBlocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'}`}
                     >
                       <StatusIcon size={11} className={`flex-shrink-0 ${status === 'not-scheduled' ? 'text-blue-600' : status === 'completed' ? 'text-emerald-600' : status === 'no-show' ? 'text-rose-600' : status === 'rescheduled' ? 'text-amber-600' : status === 'paid' ? 'text-teal-600' : status === 'canceled' ? 'text-rose-700' : status === 'ignored' ? 'text-slate-500' : 'text-orange-600'}`} />
                       <div className="flex flex-col gap-0.5 min-w-0">
