@@ -200,6 +200,7 @@ export default function LeadsView({
   const [convertedCount, setConvertedCount] = useState(0);
   const [statusBreakdown, setStatusBreakdown] = useState<Record<string, number>>({});
   const [monthlyStatusBreakdown, setMonthlyStatusBreakdown] = useState<Array<Record<string, number | string>>>([]);
+  const [campaignOptions, setCampaignOptions] = useState<string[]>([]);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [selectedBookingForNotes, setSelectedBookingForNotes] = useState<{ id: string; name: string; notes: string } | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -435,6 +436,40 @@ export default function LeadsView({
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchCampaignOptions = async () => {
+      try {
+        const headers: HeadersInit = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const response = await fetch(`${API_BASE_URL}/api/campaigns`, { headers });
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const campaigns = Array.isArray(data?.data) ? data.data : [];
+        const options = campaigns
+          .map((campaign: { utmCampaign?: unknown }) =>
+            typeof campaign.utmCampaign === 'string' ? campaign.utmCampaign.trim() : ''
+          )
+          .filter(Boolean);
+
+        if (!cancelled) {
+          setCampaignOptions((prev) => Array.from(new Set([...prev, ...options])).sort());
+        }
+      } catch {
+        // Keep leads table usable even if campaign list fetch fails.
+      }
+    };
+
+    fetchCampaignOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   const handleQuickRangeChange = useCallback((range: QuickRange) => {
     setQuickRange(range);
 
@@ -505,13 +540,16 @@ export default function LeadsView({
   }, [bookings]);
 
   const uniqueCampaigns = useMemo(() => {
-    const campaigns = new Set<string>();
+    const campaigns = new Set<string>(campaignOptions);
     bookings.forEach((booking) => {
       const campaign = booking.utmCampaign?.trim();
       if (campaign) campaigns.add(campaign);
     });
+    if (campaignFilter !== 'all' && campaignFilter.trim()) {
+      campaigns.add(campaignFilter.trim());
+    }
     return Array.from(campaigns).sort();
-  }, [bookings]);
+  }, [bookings, campaignOptions, campaignFilter]);
 
   const filteredData = useMemo(() => {
     return bookings.map((booking) => {
