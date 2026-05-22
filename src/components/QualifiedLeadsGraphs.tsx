@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, memo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -205,7 +205,13 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
     };
   }, [dateRange, filters.fromDate, filters.toDate]);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const fetchAnalytics = useCallback(async () => {
+    // Cancel any in-flight request so rapid filter changes can't pile up.
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
       setRefreshing(true);
       setError(null);
@@ -231,21 +237,36 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
       const headers: HeadersInit = {};
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE_URL}/api/leads/analytics?${params}`, { headers });
+      const res = await fetch(`${API_BASE_URL}/api/leads/analytics?${params}`, { headers, signal: ctrl.signal });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const json = await res.json();
       if (!json.success) throw new Error(json.message || 'Failed to fetch analytics');
       setData(json.data);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return; // superseded — ignore
       setError(err instanceof Error ? err.message : 'Failed to load analytics');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (abortRef.current === ctrl) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [token, dateParams, filters, fLeadSource, fSourceType, fBdaEmail]);
+    // Depend on primitive filter fields — NOT the `filters` object itself.
+    // Callers (e.g. GraphsView) render <QualifiedLeadsGraphs /> with no prop, so
+    // the `filters = {}` default is a new object every render; depending on it
+    // would re-create fetchAnalytics each render and loop the effect forever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    token, dateParams, fLeadSource, fSourceType, fBdaEmail,
+    filters.qualification, filters.status, filters.planName,
+    filters.utmSource, filters.utmMedium, filters.utmCampaign,
+    filters.minAmount, filters.maxAmount,
+    filters.leadSource, filters.sourceType, filters.bdaEmail,
+  ]);
 
   useEffect(() => {
     fetchAnalytics();
+    return () => abortRef.current?.abort();
   }, [fetchAnalytics]);
 
   // ── Derived data ───────────────────────────────────────────────
@@ -316,28 +337,31 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
       }));
   }, [data, monthlyChartFrom, monthlyChartTo]);
 
-  // Plain-language summary — what most people actually want to see at a glance.
+  // Plain-language summary. Status counts come from monthlyStatus (the same
+  // per-status logic the Leads table uses when you change its Status filter) so
+  // a card here always equals what the Leads table shows for that status.
   const summary = useMemo(() => {
     const sb = data?.statusBreakdown || [];
-    const get = (s: string) => sb.find((r) => r.status === s)?.count || 0;
+    const ms = data?.monthlyStatus || [];
+    const sum = (k: keyof (typeof ms)[number]) => ms.reduce((s, r) => s + (Number(r[k]) || 0), 0);
     const organic = (data?.monthlySourceType || []).reduce((s, r) => s + r.organic, 0);
     const paidAds = (data?.monthlySourceType || []).reduce((s, r) => s + r.paid, 0);
     return {
+      // Total = unique leads (one row per client). A lead can appear under more
+      // than one status card, so the status cards may add up to more than this.
       totalLeads: sb.reduce((s, r) => s + r.count, 0),
       organic,
       paidAds,
-      meetingsDone: get('completed'),
-      noShow: get('no-show'),
-      cancelled: get('canceled'),
-      rescheduled: get('rescheduled'),
-      paidCustomers: get('paid'),
-      scheduled: get('scheduled'),
-      notScheduled: get('not-scheduled'),
-      // A meeting was scheduled for every lead that progressed past "not-scheduled":
-      // scheduled + completed + no-show + cancelled + rescheduled + paid.
+      meetingsDone: sum('completed'),
+      noShow: sum('noShow'),
+      cancelled: sum('cancelled'),
+      rescheduled: sum('rescheduled'),
+      paidCustomers: sum('paid'),
+      scheduled: sum('scheduled'),
+      notScheduled: sum('notScheduled'),
       meetingsScheduled:
-        get('scheduled') + get('completed') + get('no-show') +
-        get('canceled') + get('rescheduled') + get('paid'),
+        sum('scheduled') + sum('completed') + sum('noShow') +
+        sum('cancelled') + sum('rescheduled') + sum('paid'),
     };
   }, [data]);
 
@@ -798,6 +822,11 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
               )}
               {/* Status meaning explainer */}
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] text-slate-600 border-t border-slate-100 pt-3">
+                <p className="sm:col-span-2 text-slate-500 italic">
+                  Each count matches the Leads table when you set its Status filter. A lead that moved
+                  through several statuses (e.g. rescheduled, then re-booked) is counted under each —
+                  so the bars can add up to more than the unique lead count.
+                </p>
                 <p><span className="font-bold text-slate-800">Not Scheduled:</span> lead submitted their details but hasn't booked a meeting yet.</p>
                 <p><span className="font-bold text-slate-800">Scheduled:</span> meeting is booked, but the BDA hasn't updated the status in the CRM yet.</p>
                 <p><span className="font-bold text-slate-800">Completed:</span> meeting happened.</p>
@@ -848,16 +877,15 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
           ) : (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlySourceData} margin={{ top: 12, right: 12, left: 0, bottom: 12 }}>
+                <BarChart data={monthlySourceData} margin={{ top: 12, right: 12, left: 0, bottom: 12 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                   <XAxis dataKey="monthLabel" tick={{ fontSize: 12 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
                   <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={36} />
                   <Tooltip cursor={cursorStyle} contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <Bar dataKey="Paid" fill={COLORS.orange} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Organic" fill={COLORS.emerald} radius={[4, 4, 0, 0]} />
-                  <Line type="monotone" dataKey="total" stroke={COLORS.slate} strokeWidth={2} dot={false} name="Total" />
-                </ComposedChart>
+                  <Bar dataKey="Paid" stackId="src" fill={COLORS.orange} />
+                  <Bar dataKey="Organic" stackId="src" fill={COLORS.emerald} radius={[6, 6, 0, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}
