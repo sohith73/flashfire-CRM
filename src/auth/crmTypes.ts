@@ -12,6 +12,7 @@ export const CRM_MODULES = [
   'bda_admin',
   'activity_logs',
   'lead_analytics',
+  'phone_calls',
 ] as const;
 
 export type CrmModule = (typeof CRM_MODULES)[number];

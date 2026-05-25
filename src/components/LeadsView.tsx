@@ -33,6 +33,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTo
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
+import { useCallMinutes } from '../hooks/useCallMinutes';
 import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanConfigContext';
 import NotesModal from './NotesModal';
@@ -644,6 +645,10 @@ export default function LeadsView({
       return bDate.getTime() - aDate.getTime();
     });
   }, [bookings]);
+
+  // Zoom Phone — call minutes per lead's phone (shows "📞 N min" on the row).
+  const phoneList = useMemo(() => filteredData.map((r) => r.phone || null), [filteredData]);
+  const { lookup: lookupCallMins } = useCallMinutes(phoneList);
 
   // Use API statusBreakdown when available (correct full-filtered counts); fallback to filteredData for backwards compat
   const statusStats = useMemo(() => {
@@ -1913,13 +1918,27 @@ export default function LeadsView({
                     </td>
                     <td className="px-1 py-1.5">
                       {row.phone && row.phone !== 'Not Specified' ? (
-                        <a
-                          href={`tel:${row.phone}`}
-                          className="text-[9px] text-gray-600 font-semibold hover:text-gray-700 truncate block"
-                          title={row.phone}
-                        >
-                          {row.phone}
-                        </a>
+                        <>
+                          <a
+                            href={`zoomphonecall://${row.phone.replace(/[^\d+]/g, '')}`}
+                            className="text-[9px] text-gray-600 font-semibold hover:text-gray-700 truncate block"
+                            title={`Call ${row.phone} via Zoom Phone`}
+                          >
+                            {row.phone}
+                          </a>
+                          {(() => {
+                            const mins = lookupCallMins(row.phone);
+                            if (!mins || mins.calls === 0) return null;
+                            return (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[8px] font-bold px-1 mt-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200"
+                                title={`${mins.calls} call${mins.calls === 1 ? '' : 's'} • ${mins.seconds}s total`}
+                              >
+                                📞 {mins.minutes} min
+                              </span>
+                            );
+                          })()}
+                        </>
                       ) : (
                         <span className="text-slate-400 text-[9px]">—</span>
                       )}

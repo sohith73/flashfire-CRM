@@ -43,6 +43,7 @@ import FollowUpModal, { type FollowUpData } from './FollowUpModal';
 import PlanDetailsModal, { type PlanDetailsData } from './PlanDetailsModal';
 import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanConfigContext';
 import { useCrmAuth } from '../auth/CrmAuthContext';
+import { useCallMinutes } from '../hooks/useCallMinutes';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -203,6 +204,15 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
   const { planOptions } = usePlanConfig();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [usersWithoutBookings, setUsersWithoutBookings] = useState<UserWithoutBooking[]>([]);
+
+  // Zoom Phone — call minutes lookup, fed by every phone visible on either table.
+  const _allPhonesForMinutes = useMemo(() => {
+    const phones: Array<string | null> = [];
+    bookings.forEach((b) => phones.push((b as { clientPhone?: string }).clientPhone || null));
+    usersWithoutBookings.forEach((u) => phones.push((u as { phone?: string }).phone || null));
+    return phones;
+  }, [bookings, usersWithoutBookings]);
+  const { lookup: lookupCallMins } = useCallMinutes(_allPhonesForMinutes);
   const [userCampaigns, setUserCampaigns] = useState<Map<string, UserCampaign[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1385,12 +1395,27 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                               </td>
                               <td className="px-2 py-4">
                                 {row.phone && row.phone !== 'Not Specified' ? (
-                                  <a
-                                    href={`tel:${row.phone}`}
-                                    className="text-[10px] text-gray-600 font-semibold hover:text-orange-700"
-                                  >
-                                    {row.phone}
-                                  </a>
+                                  <>
+                                    <a
+                                      href={`zoomphonecall://${row.phone.replace(/[^\d+]/g, '')}`}
+                                      className="text-[10px] text-gray-600 font-semibold hover:text-orange-700 block"
+                                      title={`Call ${row.phone} via Zoom Phone`}
+                                    >
+                                      {row.phone}
+                                    </a>
+                                    {(() => {
+                                      const mins = lookupCallMins(row.phone);
+                                      if (!mins || mins.calls === 0) return null;
+                                      return (
+                                        <span
+                                          className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1 mt-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200"
+                                          title={`${mins.calls} call${mins.calls === 1 ? '' : 's'} • ${mins.seconds}s total`}
+                                        >
+                                          📞 {mins.minutes} min
+                                        </span>
+                                      );
+                                    })()}
+                                  </>
                                 ) : (
                                   <span className="text-slate-400 text-[10px]">—</span>
                                 )}
@@ -1697,13 +1722,27 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                       </td>
                       <td className="px-1 py-1.5">
                         {row.phone && row.phone !== 'Not Specified' ? (
-                          <a
-                            href={`tel:${row.phone}`}
-                            className="text-[10px] text-gray-600 font-semibold hover:text-orange-700 truncate block"
-                            title={row.phone}
-                          >
-                            {row.phone}
-                          </a>
+                          <>
+                            <a
+                              href={`zoomphonecall://${row.phone.replace(/[^\d+]/g, '')}`}
+                              className="text-[10px] text-gray-600 font-semibold hover:text-orange-700 truncate block"
+                              title={`Call ${row.phone} via Zoom Phone`}
+                            >
+                              {row.phone}
+                            </a>
+                            {(() => {
+                              const mins = lookupCallMins(row.phone);
+                              if (!mins || mins.calls === 0) return null;
+                              return (
+                                <span
+                                  className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1 mt-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200"
+                                  title={`${mins.calls} call${mins.calls === 1 ? '' : 's'} • ${mins.seconds}s total`}
+                                >
+                                  📞 {mins.minutes} min
+                                </span>
+                              );
+                            })()}
+                          </>
                         ) : (
                           <span className="text-slate-400 text-[10px]">—</span>
                         )}
