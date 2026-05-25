@@ -18,6 +18,7 @@ import {
   Bell,
   Facebook,
   Activity,
+  Phone,
 } from 'lucide-react';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
@@ -39,6 +40,7 @@ const MeetingInfoView = React.lazy(() => import('../components/MeetingInfoView')
 const MetaLeadsView = React.lazy(() => import('../components/MetaLeadsView'));
 const ActivityLogView = React.lazy(() => import('../components/ActivityLogView'));
 const GraphsView = React.lazy(() => import('../components/GraphsView'));
+const PhoneCallsView = React.lazy(() => import('../components/PhoneCallsView'));
 
 function TabSpinner() {
   return (
@@ -51,7 +53,7 @@ function TabSpinner() {
 }
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs';
+type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'phone';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -72,6 +74,7 @@ const TAB_CONFIG: Array<{
   { tab: 'meeting_links', permission: 'meeting_links', label: 'Meeting Info', icon: Video },
   { tab: 'activity', permission: 'activity_logs', label: 'Activity Log', icon: Activity },
   { tab: 'graphs', permission: 'lead_analytics', label: 'Graphs', icon: BarChart3 },
+  { tab: 'phone', permission: 'phone_calls', label: 'Phone Calls', icon: Phone },
 ];
 
 export default function CrmDashboardPage() {
@@ -444,6 +447,7 @@ export default function CrmDashboardPage() {
                 {activeTab === 'meeting_links' && <MeetingInfoView />}
                 {activeTab === 'activity' && <ActivityLogView />}
                 {activeTab === 'graphs' && <GraphsView />}
+                {activeTab === 'phone' && <PhoneCallsView />}
               </Suspense>
             )}
           </div>
