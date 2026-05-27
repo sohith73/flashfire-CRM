@@ -84,21 +84,25 @@ export default function GraphsView() {
       const n = new Date();
       return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
     })();
+    // Paid count comes from the clients-tracking DB (pc.monthly) — same source
+    // used by the Paid bar in Monthly Lead Status and the Paid Clients card.
+    const pcMap = new Map((pc?.monthly || []).map((p) => [p.month, p.total]));
     return convMonthly
       .filter((r) => r.month && r.month <= cap)
       .sort((a, b) => a.month.localeCompare(b.month))
       .map((r) => {
-        const rate = r.completed > 0 ? Math.round((r.paid / r.completed) * 1000) / 10 : 0;
+        const paid = pcMap.get(r.month) || 0;
+        const rate = r.completed > 0 ? Math.round((paid / r.completed) * 1000) / 10 : 0;
         const [y, mo] = r.month.split('-');
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         return {
           monthLabel: `${months[parseInt(mo, 10) - 1] || mo} ${y}`,
           Completed: r.completed,
-          Paid: r.paid,
+          Paid: paid,
           rate,
         };
       });
-  }, [convMonthly]);
+  }, [convMonthly, pc]);
 
   const conversionTotals = useMemo(() => {
     const c = conversionChart.reduce((s, r) => s + r.Completed, 0);
@@ -197,7 +201,7 @@ export default function GraphsView() {
         )}
         <div className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-600 space-y-0.5">
           <p><span className="font-bold text-slate-800">Completed</span> = lead's meeting happened.</p>
-          <p><span className="font-bold text-slate-800">Paid</span> = lead became a paying customer.</p>
+          <p><span className="font-bold text-slate-800">Paid</span> = paying clients for that month, taken from the clients-tracking system (same source as the Paid Clients section below).</p>
           <p><span className="font-bold text-slate-800">Conversion %</span> = Paid ÷ Completed per month. Higher = sales closing better after meetings.</p>
         </div>
       </div>

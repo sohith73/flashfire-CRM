@@ -449,13 +449,16 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
   // ── Derived data ───────────────────────────────────────────────
   const funnelData = useMemo(() => {
     if (!data) return [];
-    const { funnel } = data;
+    const f = data.funnel;
+    const converted = Array.isArray(paidClientsMonthly)
+      ? paidClientsMonthly.reduce((s, m) => s + (m.total || 0), 0)
+      : f.converted;
     return [
-      { name: 'MQL', value: funnel.mql, fill: COLORS.mql },
-      { name: 'SQL', value: funnel.sql, fill: COLORS.sql },
-      { name: 'Converted', value: funnel.converted, fill: COLORS.converted },
+      { name: 'MQL', value: f.mql, fill: COLORS.mql },
+      { name: 'SQL', value: f.sql, fill: COLORS.sql },
+      { name: 'Converted', value: converted, fill: COLORS.converted },
     ];
-  }, [data]);
+  }, [data, paidClientsMonthly]);
 
   const monthlyGrowth = useMemo(() => {
     if (!data?.monthlyComparison || data.monthlyComparison.length < 2) return null;
@@ -547,23 +550,29 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
       noShow: sum('noShow'),
       cancelled: sum('cancelled'),
       rescheduled: sum('rescheduled'),
-      paidCustomers: sum('paid'),
+      paidCustomers: Array.isArray(paidClientsMonthly)
+        ? paidClientsMonthly.reduce((s, m) => s + (m.total || 0), 0)
+        : sum('paid'),
       scheduled: sum('scheduled'),
       notScheduled: sum('notScheduled'),
       meetingsScheduled:
         sum('scheduled') + sum('completed') + sum('noShow') +
         sum('cancelled') + sum('rescheduled') + sum('paid'),
     };
-  }, [data]);
+  }, [data, paidClientsMonthly]);
 
-  // Monthly conversion — Completed meetings vs Paid customers + conversion rate.
+  // Monthly conversion — Completed meetings vs Paid clients + conversion rate.
+  // "Paid" comes from the clients-tracking DB (paidClientsMonthly) when supplied
+  // — matches the Monthly Lead Status chart. Falls back to CRM bookingStatus.
   const completedVsPaidData = useMemo(() => {
     if (!data?.monthlyStatus) return [];
+    const pcMap = new Map((paidClientsMonthly || []).map((p) => [p.month, p.total]));
+    const useClients = Array.isArray(paidClientsMonthly);
     return data.monthlyStatus
       .filter((r) => r.month && inMonthRange(r.month))
       .map((r) => {
         const completed = r.completed || 0;
-        const paid = r.paid || 0;
+        const paid = useClients ? (pcMap.get(r.month) || 0) : (r.paid || 0);
         const rate = completed > 0 ? Math.round((paid / completed) * 1000) / 10 : 0;
         return {
           monthLabel: fmtMonth(r.month),
@@ -572,7 +581,7 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
           rate,
         };
       });
-  }, [data, monthlyChartFrom, monthlyChartTo]);
+  }, [data, paidClientsMonthly, monthlyChartFrom, monthlyChartTo]);
 
   const completedVsPaidTotals = useMemo(() => {
     const c = completedVsPaidData.reduce((s, r) => s + r.Completed, 0);
@@ -665,7 +674,28 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
 
   if (!data) return null;
 
-  const { funnel } = data;
+  // Patch the funnel so "Converted" = paying clients from clients-tracking
+  // (when provided) — consistent with the Paid bars/cards everywhere else.
+  // Funnel rates recomputed using the overridden converted count.
+  const rawFunnel = data.funnel;
+  const overrideConverted = Array.isArray(paidClientsMonthly)
+    ? paidClientsMonthly.reduce((s, m) => s + (m.total || 0), 0)
+    : null;
+  const funnel = (() => {
+    if (overrideConverted == null) return rawFunnel;
+    const converted = overrideConverted;
+    const mql = rawFunnel.mql;
+    const sql = rawFunnel.sql;
+    const total = mql + sql + converted;
+    return {
+      ...rawFunnel,
+      converted,
+      total,
+      mqlToSqlRate: mql > 0 ? ((sql + converted) / total) * 100 : 0,
+      sqlToConvertedRate: sql > 0 ? (converted / sql) * 100 : (converted > 0 ? 100 : 0),
+      overallConversion: total > 0 ? (converted / total) * 100 : 0,
+    };
+  })();
 
   return (
     <div className={`space-y-6 ${className}`}>
@@ -1224,7 +1254,9 @@ export default function QualifiedLeadsGraphs({ className = '', filters = {}, mon
           )}
           <div className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-600">
             <p><span className="font-bold text-slate-800">Completed:</span> lead's meeting happened.</p>
-            <p><span className="font-bold text-slate-800">Paid:</span> lead became a paying customer.</p>
+            <p><span className="font-bold text-slate-800">Paid:</span> {usePaidClients
+              ? 'paying clients for that month, taken from the clients-tracking system.'
+              : 'lead became a paying customer.'}</p>
             <p><span className="font-bold text-slate-800">Conversion %</span> = Paid ÷ Completed for the month. Higher = sales closing better after meetings.</p>
           </div>
         </ChartCard>
