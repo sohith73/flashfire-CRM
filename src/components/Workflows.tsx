@@ -54,6 +54,15 @@ interface EmailTemplate {
   createdAt: string;
 }
 
+interface DesignedTemplateLite {
+  _id: string;
+  name: string;
+  subject?: string;
+  category?: string;
+  senderEmail?: string | null;
+  senderName?: string | null;
+}
+
 interface WorkflowStep {
   channel: 'email' | 'whatsapp';
   daysAfter: number;
@@ -282,7 +291,7 @@ const TemplatePreview = ({ templateName, variables }: { templateName?: string; v
 
 function Workflows() {
   const { planOptions } = usePlanConfig();
-  const { canEdit } = useCrmAuth();
+  const { canEdit, token: crmToken } = useCrmAuth();
   const editable = canEdit('workflows');
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflows');
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -302,6 +311,8 @@ function Workflows() {
   // Email Templates state
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
   const [loadingEmailTemplates, setLoadingEmailTemplates] = useState(false);
+  // In-dashboard designed templates (Email Templates tab) — attachable as steps.
+  const [designedTemplates, setDesignedTemplates] = useState<DesignedTemplateLite[]>([]);
   const [useManualEmailInput, setUseManualEmailInput] = useState<{ [key: string]: boolean }>({});
   const [savingTemplate, setSavingTemplate] = useState<{ [key: string]: boolean }>({});
 
@@ -399,6 +410,20 @@ function Workflows() {
       console.error('Error fetching email templates:', err);
     } finally {
       setLoadingEmailTemplates(false);
+    }
+    // Also pull the in-dashboard designed templates so they can be attached.
+    fetchDesignedTemplates();
+  };
+
+  const fetchDesignedTemplates = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/crm/email-templates/designed`, {
+        headers: crmToken ? { Authorization: `Bearer ${crmToken}` } : {},
+      });
+      const data = await response.json();
+      if (data.success) setDesignedTemplates(data.data || []);
+    } catch (err) {
+      console.error('Error fetching designed templates:', err);
     }
   };
 
@@ -1362,6 +1387,7 @@ function Workflows() {
                                           return;
                                         }
                                         const template = emailTemplates.find(t => t.name === e.target.value);
+                                        const designed = designedTemplates.find(d => d.name === e.target.value);
                                         if (template) {
                                           const domain = template.domainName?.includes('@')
                                             ? template.domainName.split('@')[1]
@@ -1373,6 +1399,15 @@ function Workflows() {
                                             domainName: domain,
                                             senderEmail: template.senderEmail || '',
                                             senderName: template.senderName || ''
+                                          });
+                                        } else if (designed) {
+                                          // Designed (dashboard) template — store its Mongo _id as templateId.
+                                          updateStep(null, index, {
+                                            templateId: designed._id,
+                                            templateName: designed.name,
+                                            domainName: 'flashfiremails.com',
+                                            senderEmail: designed.senderEmail || '',
+                                            senderName: designed.senderName || ''
                                           });
                                         } else {
                                           updateStep(null, index, {
@@ -1386,14 +1421,19 @@ function Workflows() {
                                       required
                                     >
                                       <option value="">Select Email Template</option>
-                                      {emailTemplates.length === 0 ? (
-                                        <option value="" disabled>No templates saved. Use manual input.</option>
-                                      ) : (
-                                        emailTemplates.map((template) => (
-                                          <option key={template.id} value={template.name}>
-                                            {template.name}
-                                          </option>
-                                        ))
+                                      {emailTemplates.map((template) => (
+                                        <option key={template.id} value={template.name}>
+                                          {template.name}
+                                        </option>
+                                      ))}
+                                      {designedTemplates.length > 0 && (
+                                        <optgroup label="✦ Your Dashboard Templates">
+                                          {designedTemplates.map((d) => (
+                                            <option key={d._id} value={d.name}>
+                                              {d.name}
+                                            </option>
+                                          ))}
+                                        </optgroup>
                                       )}
                                     </select>
                                     <button
@@ -1800,6 +1840,7 @@ function Workflows() {
                                                 return;
                                               }
                                               const template = emailTemplates.find(t => t.name === e.target.value);
+                                              const designed = designedTemplates.find(d => d.name === e.target.value);
                                               if (template) {
                                                 const domain = template.domainName?.includes('@')
                                                   ? template.domainName.split('@')[1]
@@ -1811,6 +1852,15 @@ function Workflows() {
                                                   domainName: domain,
                                                   senderEmail: template.senderEmail || '',
                                                   senderName: template.senderName || ''
+                                                });
+                                              } else if (designed) {
+                                                // Designed (dashboard) template — store its Mongo _id as templateId.
+                                                updateStep(workflow.workflowId, index, {
+                                                  templateId: designed._id,
+                                                  templateName: designed.name,
+                                                  domainName: 'flashfiremails.com',
+                                                  senderEmail: designed.senderEmail || '',
+                                                  senderName: designed.senderName || ''
                                                 });
                                               } else {
                                                 updateStep(workflow.workflowId, index, {
@@ -1824,14 +1874,19 @@ function Workflows() {
                                             required
                                           >
                                             <option value="">Select Email Template</option>
-                                            {emailTemplates.length === 0 ? (
-                                              <option value="" disabled>No templates saved</option>
-                                            ) : (
-                                              emailTemplates.map((template) => (
-                                                <option key={template.id} value={template.name}>
-                                                  {template.name}
-                                                </option>
-                                              ))
+                                            {emailTemplates.map((template) => (
+                                              <option key={template.id} value={template.name}>
+                                                {template.name}
+                                              </option>
+                                            ))}
+                                            {designedTemplates.length > 0 && (
+                                              <optgroup label="✦ Your Dashboard Templates">
+                                                {designedTemplates.map((d) => (
+                                                  <option key={d._id} value={d.name}>
+                                                    {d.name}
+                                                  </option>
+                                                ))}
+                                              </optgroup>
                                             )}
                                           </select>
                                           <button

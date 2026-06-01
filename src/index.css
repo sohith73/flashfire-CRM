@@ -7,3 +7,16 @@
     -ms-overflow-style: none;  /* IE & Edge */
     scrollbar-width: none;     /* Firefox */
   }
+/* Designed email template — live preview rendering */
+.email-preview h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 .5rem; color: #0f172a; }
+.email-preview h2 { font-size: 1.2rem; font-weight: 700; margin: 1rem 0 .4rem; color: #0f172a; }
+.email-preview h3 { font-size: 1.05rem; font-weight: 700; margin: .8rem 0 .3rem; color: #1e293b; }
+.email-preview p { margin: 0 0 .75rem; }
+.email-preview a { color: #ea580c; text-decoration: underline; }
+.email-preview ul, .email-preview ol { margin: 0 0 .75rem 1.25rem; }
+.email-preview li { margin: .2rem 0; }
+.email-preview blockquote { border-left: 3px solid #e2e8f0; padding-left: .75rem; color: #64748b; margin: 0 0 .75rem; }
+.email-preview img { max-width: 100%; border-radius: 8px; }
+.email-preview code { background: #f1f5f9; padding: .1rem .3rem; border-radius: 4px; font-size: .85em; }
+.email-preview strong { font-weight: 700; }
+.email-preview hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1rem 0; }
