@@ -509,7 +509,7 @@ export default function GraphsView02() {
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <div className="space-y-8 p-6 max-w-7xl mx-auto">
+    <div className="space-y-6 p-6 max-w-7xl mx-auto">
 
       {/* Page header */}
       <div className="flex items-center justify-between">
@@ -522,263 +522,206 @@ export default function GraphsView02() {
         {RefreshBtn}
       </div>
 
-      {/* ── 1. Completed Meetings Monthly ─────────────────────────── */}
-      <Card
-        title="Completed Meetings — Monthly"
-        subtitle="What happened to meetings each month: Completed (done) · Paid (done + bought) · No-Show · Cancelled · Rescheduled"
-        icon={CalendarCheck}
-        iconColor="text-green-600"
-        badge={RefreshBtn}
-      >
-        <KpiStrip items={[
-          { label:'Completed',   value: completedTotals.completed,  color: COLORS.completed },
-          { label:'Paid',        value: completedTotals.paid,        color: COLORS.paid },
-          { label:'No-Show',     value: completedTotals.noShow,      color: COLORS.noShow },
-          { label:'Cancelled',   value: completedTotals.cancelled,   color: COLORS.cancelled },
-          { label:'Rescheduled', value: completedTotals.rescheduled, color: COLORS.rescheduled },
-        ]} />
+      {/* ── Row 1: Charts 1 & 2 ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {completedData.length === 0
-          ? <Empty msg="No meeting data" />
-          : (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={completedData} margin={{ top:10, right:16, left:0, bottom:6 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
-                  <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
-                  <Tooltip content={<CompletedTip />} cursor={CS} />
-                  <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
-                  <Bar dataKey="Rescheduled" stackId="s" fill={COLORS.rescheduled} />
-                  <Bar dataKey="No-Show"     stackId="s" fill={COLORS.noShow} />
-                  <Bar dataKey="Cancelled"   stackId="s" fill={COLORS.cancelled} />
-                  <Bar dataKey="Paid"        stackId="s" fill={COLORS.paid} />
-                  <Bar dataKey="Completed"   stackId="s" fill={COLORS.completed} radius={[5,5,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )
-        }
+        {/* 1. Completed Meetings Monthly */}
+        <Card
+          title="Completed Meetings — Monthly"
+          subtitle="Completed · Paid · No-Show · Cancelled · Rescheduled per month"
+          icon={CalendarCheck}
+          iconColor="text-green-600"
+          badge={RefreshBtn}
+        >
+          <KpiStrip items={[
+            { label:'Completed',   value: completedTotals.completed,  color: COLORS.completed },
+            { label:'Paid',        value: completedTotals.paid,        color: COLORS.paid },
+            { label:'No-Show',     value: completedTotals.noShow,      color: COLORS.noShow },
+            { label:'Cancelled',   value: completedTotals.cancelled,   color: COLORS.cancelled },
+            { label:'Rescheduled', value: completedTotals.rescheduled, color: COLORS.rescheduled },
+          ]} />
+          {completedData.length === 0
+            ? <Empty msg="No meeting data" />
+            : (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={completedData} margin={{ top:10, right:16, left:0, bottom:6 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
+                    <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                    <Tooltip content={<CompletedTip />} cursor={CS} />
+                    <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
+                    <Bar dataKey="Rescheduled" stackId="s" fill={COLORS.rescheduled} />
+                    <Bar dataKey="No-Show"     stackId="s" fill={COLORS.noShow} />
+                    <Bar dataKey="Cancelled"   stackId="s" fill={COLORS.cancelled} />
+                    <Bar dataKey="Paid"        stackId="s" fill={COLORS.paid} />
+                    <Bar dataKey="Completed"   stackId="s" fill={COLORS.completed} radius={[5,5,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )
+          }
+        </Card>
 
-        <StatusLegendTable rows={[
-          { metric: 'Completed',   color: COLORS.completed,   included: ['completed'],  excluded: ['scheduled','not-scheduled','no-show','canceled','rescheduled','paid'] },
-          { metric: 'Paid',        color: COLORS.paid,        included: ['paid'],       excluded: ['scheduled','not-scheduled','no-show','canceled','rescheduled','completed'] },
-          { metric: 'No-Show',     color: COLORS.noShow,      included: ['no-show'],    excluded: ['scheduled','not-scheduled','completed','canceled','rescheduled','paid'] },
-          { metric: 'Cancelled',   color: COLORS.cancelled,   included: ['canceled'],   excluded: ['scheduled','not-scheduled','completed','no-show','rescheduled','paid'] },
-          { metric: 'Rescheduled', color: COLORS.rescheduled, included: ['rescheduled'],excluded: ['scheduled','not-scheduled','completed','no-show','canceled','paid'] },
-        ]} />
-      </Card>
-
-      {/* ── 2. Completed → Paid Conversion Rate ───────────────────── */}
-      <Card
-        title="Completed → Paid Conversion Rate"
-        subtitle='Rate = Paid ÷ (Completed + Paid). "Meetings Done" includes both statuses since both had their call.'
-        icon={TrendingUp}
-        iconColor="text-indigo-600"
-        badge={RefreshBtn}
-      >
-        <KpiStrip items={[
-          { label:'Meetings Done',  value: convTotals.done,              color: COLORS.completed },
-          { label:'Converted Paid', value: convTotals.paid,              color: COLORS.paid },
-          { label:'Conversion Rate',value: `${convTotals.rate}%`,        color: COLORS.rate },
-        ]} />
-
-        {convData.length === 0
-          ? <Empty msg="No data" />
-          : (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={convData} margin={{ top:10, right:44, left:0, bottom:6 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
-                  <YAxis yAxisId="left"  tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize:11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0,100]} />
-                  <Tooltip
-                    cursor={CS}
-                    contentStyle={TS}
-                    formatter={(v:number, name:string) =>
-                      name === 'rate' ? [`${v}%`, 'Conversion %'] : [v.toLocaleString(), name]
-                    }
-                  />
-                  <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
-                  <Bar yAxisId="left" dataKey="Meetings Done" fill={COLORS.completed} radius={[4,4,0,0]} />
-                  <Bar yAxisId="left" dataKey="Paid"          fill={COLORS.paid}      radius={[4,4,0,0]} />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="rate"
-                    name="Conversion %"
-                    stroke={COLORS.rate}
-                    strokeWidth={2.5}
-                    dot={{ r:4, fill:COLORS.rate, strokeWidth:0 }}
-                    activeDot={{ r:6 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )
-        }
-
-        <StatusLegendTable rows={[
-          { metric: 'Meetings Done',   color: COLORS.completed, included: ['completed', 'paid'],  excluded: ['scheduled','not-scheduled','no-show','canceled','rescheduled'] },
-          { metric: 'Paid',            color: COLORS.paid,      included: ['paid'],               excluded: ['scheduled','not-scheduled','no-show','canceled','rescheduled','completed'] },
-          { metric: 'Conversion %',    color: COLORS.rate,      included: ['paid ÷ (completed + paid) × 100'], excluded: [] },
-        ]} />
-        <p className="mt-2 text-[11px] text-slate-400">A rising orange line = sales closing better after calls. Drop in recent months = leads still scheduled, not yet updated to Paid.</p>
-      </Card>
-
-      {/* ── 3. Meta Leads vs Booked ─────────────────────────────────── */}
-      <Card
-        title="Meta Leads vs Booked Meetings"
-        subtitle="Same filter as the Meta Leads tab — leadSource = meta_lead_ad. Booked = completed + paid + scheduled + no-show + canceled + rescheduled."
-        icon={Facebook}
-        iconColor="text-blue-600"
-        badge={RefreshBtn}
-      >
-        <KpiStrip items={[
-          { label:'Meta Leads',  value: metaTotals.total.toLocaleString(),  color: COLORS.meta },
-          { label:'Booked',      value: metaTotals.booked.toLocaleString(), color: COLORS.completed },
-          { label:'Not Booked',  value: (metaTotals.total - metaTotals.booked).toLocaleString(), color: COLORS.metaNot },
-          { label:'Booking Rate',value: `${metaTotals.rate}%`,              color: COLORS.rate },
-        ]} />
-
-        {metaData.length === 0
-          ? <Empty msg="No Meta lead data (started Feb 2026)" />
-          : (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={metaData} margin={{ top:10, right:44, left:0, bottom:6 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
-                  <YAxis yAxisId="left"  tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize:11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0,100]} />
-                  <Tooltip
-                    cursor={CS}
-                    contentStyle={TS}
-                    formatter={(v:number, name:string) =>
-                      name === 'rate' ? [`${v}%`, 'Booking Rate %'] : [v.toLocaleString(), name]
-                    }
-                  />
-                  <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
-                  <Bar yAxisId="left" dataKey="Not Booked"    stackId="m" fill={COLORS.metaNot} />
-                  <Bar yAxisId="left" dataKey="Booked Meeting" stackId="m" fill={COLORS.meta} radius={[5,5,0,0]} />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="rate"
-                    name="Booking Rate %"
-                    stroke={COLORS.rate}
-                    strokeWidth={2.5}
-                    dot={{ r:4, fill:COLORS.rate, strokeWidth:0 }}
-                    activeDot={{ r:6 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )
-        }
-
-        <StatusLegendTable rows={[
-          { metric: 'Meta Leads',    color: COLORS.meta,      included: [],  field: 'leadSource = "meta_lead_ad" — exact same filter as Meta Leads tab' },
-          { metric: 'Booked',        color: COLORS.completed, included: ['completed','paid','scheduled','no-show','canceled','rescheduled'], excluded: ['not-scheduled'] },
-          { metric: 'Not Booked',    color: COLORS.metaNot,   included: ['not-scheduled'], excluded: ['completed','paid','scheduled','no-show','canceled','rescheduled'] },
-          { metric: 'Booking Rate %',color: COLORS.rate,      included: ['booked ÷ total meta leads × 100'], excluded: [] },
-        ]} />
-        <p className="mt-2 text-[11px] text-slate-400">Filtered to leadSource = meta_lead_ad — matches the Meta Leads tab count per month.</p>
-      </Card>
-
-      {/* ── 4. Monthly Leads by UTM Medium ──────────────────────────── */}
-      <Card
-        title="Monthly Leads by UTM Medium"
-        subtitle="How leads arrived (utmMedium). Top 8 mediums shown; rest grouped as Other."
-        icon={BarChart2}
-        iconColor="text-violet-600"
-        badge={RefreshBtn}
-      >
-        {/* Colour key */}
-        {utmMediumChart.keys.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {utmMediumChart.keys.map((k, i) => (
-              <span
-                key={k}
-                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1"
-              >
-                <span
-                  className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: UTM_PALETTE[i % UTM_PALETTE.length] }}
-                />
-                {k}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {utmMediumChart.chartData.length === 0
-          ? <Empty msg="No UTM medium data" />
-          : (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={utmMediumChart.chartData} margin={{ top:10, right:12, left:0, bottom:6 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
-                  <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
-                  <Tooltip cursor={CS} contentStyle={TS}
-                    formatter={(v:number, name:string) => [v.toLocaleString(), name]}
-                  />
-                  <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
-                  {utmMediumChart.keys.map((k, i) => (
-                    <Bar
-                      key={k}
-                      dataKey={k}
-                      stackId="utm"
-                      fill={UTM_PALETTE[i % UTM_PALETTE.length]}
-                      radius={i === utmMediumChart.keys.length-1 ? [5,5,0,0] : undefined}
+        {/* 2. Completed → Paid Conversion Rate */}
+        <Card
+          title="Completed → Paid Conversion Rate"
+          subtitle='Paid ÷ (Completed + Paid) — orange line shows closing rate over time'
+          icon={TrendingUp}
+          iconColor="text-indigo-600"
+          badge={RefreshBtn}
+        >
+          <KpiStrip items={[
+            { label:'Meetings Done',  value: convTotals.done,        color: COLORS.completed },
+            { label:'Converted Paid', value: convTotals.paid,        color: COLORS.paid },
+            { label:'Conversion Rate',value: `${convTotals.rate}%`,  color: COLORS.rate },
+          ]} />
+          {convData.length === 0
+            ? <Empty msg="No data" />
+            : (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={convData} margin={{ top:10, right:44, left:0, bottom:6 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
+                    <YAxis yAxisId="left"  tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize:11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0,100]} />
+                    <Tooltip cursor={CS} contentStyle={TS}
+                      formatter={(v:number, name:string) =>
+                        name === 'rate' ? [`${v}%`, 'Conversion %'] : [v.toLocaleString(), name]
+                      }
                     />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
+                    <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
+                    <Bar yAxisId="left" dataKey="Meetings Done" fill={COLORS.completed} radius={[4,4,0,0]} />
+                    <Bar yAxisId="left" dataKey="Paid"          fill={COLORS.paid}      radius={[4,4,0,0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="rate" name="Conversion %"
+                      stroke={COLORS.rate} strokeWidth={2.5}
+                      dot={{ r:4, fill:COLORS.rate, strokeWidth:0 }} activeDot={{ r:6 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )
+          }
+        </Card>
+      </div>
+
+      {/* ── Row 2: Charts 3 & 4 ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* 3. Meta Leads vs Booked */}
+        <Card
+          title="Meta Leads vs Booked Meetings"
+          subtitle="leadSource = meta_lead_ad · Booked = all statuses except not-scheduled"
+          icon={Facebook}
+          iconColor="text-blue-600"
+          badge={RefreshBtn}
+        >
+          <KpiStrip items={[
+            { label:'Meta Leads',  value: metaTotals.total.toLocaleString(),  color: COLORS.meta },
+            { label:'Booked',      value: metaTotals.booked.toLocaleString(), color: COLORS.completed },
+            { label:'Not Booked',  value: (metaTotals.total - metaTotals.booked).toLocaleString(), color: COLORS.metaNot },
+            { label:'Booking Rate',value: `${metaTotals.rate}%`,              color: COLORS.rate },
+          ]} />
+          {metaData.length === 0
+            ? <Empty msg="No Meta lead data (started Feb 2026)" />
+            : (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={metaData} margin={{ top:10, right:44, left:0, bottom:6 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
+                    <YAxis yAxisId="left"  tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize:11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0,100]} />
+                    <Tooltip cursor={CS} contentStyle={TS}
+                      formatter={(v:number, name:string) =>
+                        name === 'rate' ? [`${v}%`, 'Booking Rate %'] : [v.toLocaleString(), name]
+                      }
+                    />
+                    <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
+                    <Bar yAxisId="left" dataKey="Not Booked"     stackId="m" fill={COLORS.metaNot} />
+                    <Bar yAxisId="left" dataKey="Booked Meeting" stackId="m" fill={COLORS.meta} radius={[5,5,0,0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="rate" name="Booking Rate %"
+                      stroke={COLORS.rate} strokeWidth={2.5}
+                      dot={{ r:4, fill:COLORS.rate, strokeWidth:0 }} activeDot={{ r:6 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )
+          }
+        </Card>
+
+        {/* 4. Monthly Leads by UTM Medium */}
+        <Card
+          title="Monthly Leads by UTM Medium"
+          subtitle="How leads arrived (utmMedium). Top 8 mediums shown; rest grouped as Other."
+          icon={BarChart2}
+          iconColor="text-violet-600"
+          badge={RefreshBtn}
+        >
+          {utmMediumChart.keys.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {utmMediumChart.keys.map((k, i) => (
+                <span key={k} className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1">
+                  <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: UTM_PALETTE[i % UTM_PALETTE.length] }} />
+                  {k}
+                </span>
+              ))}
             </div>
-          )
-        }
+          )}
+          {utmMediumChart.chartData.length === 0
+            ? <Empty msg="No UTM medium data" />
+            : (
+              <div className="h-72">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={utmMediumChart.chartData} margin={{ top:10, right:12, left:0, bottom:6 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                    <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
+                    <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                    <Tooltip cursor={CS} contentStyle={TS} formatter={(v:number, name:string) => [v.toLocaleString(), name]} />
+                    <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
+                    {utmMediumChart.keys.map((k, i) => (
+                      <Bar key={k} dataKey={k} stackId="utm" fill={UTM_PALETTE[i % UTM_PALETTE.length]}
+                        radius={i === utmMediumChart.keys.length-1 ? [5,5,0,0] : undefined}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )
+          }
+        </Card>
+      </div>
 
-        <StatusLegendTable rows={[
-          { metric: 'Each bar segment', color: '#94A3B8', included: [], field: 'ALL statuses — no status filter applied' },
-          { metric: 'paid (medium)',     color: UTM_PALETTE[0], included: [], field: 'utmMedium = "paid" → Meta/Facebook ad leads' },
-          { metric: 'mailc / email',     color: UTM_PALETTE[1], included: [], field: 'utmMedium = "mailc" or "email" → email outreach' },
-          { metric: 'Hero_Section / Website_*', color: UTM_PALETTE[2], included: [], field: 'utmMedium = website CTA buttons → organic visits' },
-          { metric: 'direct',            color: UTM_PALETTE[3], included: [], field: 'utmMedium = "direct" → typed URL / no referrer' },
-        ]} />
-      </Card>
+      {/* ── Row 3: Charts 5 & 6 ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-      {/* ── 5. Paid vs Organic Leads Monthly ────────────────────────── */}
-      <Card
-        title="Paid vs Organic Leads — Monthly"
-        subtitle='Paid = utmMedium is "paid" / "cpc" / "ppc" / "paid_social". Organic = everything else (email, direct, website, social).'
-        icon={Activity}
-        iconColor="text-orange-500"
-        badge={RefreshBtn}
-      >
-        <KpiStrip items={[
-          { label:'Total Leads', value: paidOrganicTotals.total.toLocaleString(),   color: COLORS.slate },
-          { label:'Paid Ads',    value: paidOrganicTotals.paid.toLocaleString(),    color: COLORS.adPaid },
-          { label:'Organic',     value: paidOrganicTotals.organic.toLocaleString(), color: COLORS.organic },
-          { label:'Ad Share',    value: `${paidOrganicTotals.paidPct}%`,            color: COLORS.rate },
-        ]} />
-
-        {paidOrganicData.length === 0
-          ? <Empty msg="No source type data" />
-          : (
-            <>
-              <div className="h-80">
+        {/* 5. Paid vs Organic */}
+        <Card
+          title="Paid vs Organic Leads — Monthly"
+          subtitle='Paid = utmMedium "paid/cpc/ppc/paid_social". Organic = everything else.'
+          icon={Activity}
+          iconColor="text-orange-500"
+          badge={RefreshBtn}
+        >
+          <KpiStrip items={[
+            { label:'Total Leads', value: paidOrganicTotals.total.toLocaleString(),   color: COLORS.slate },
+            { label:'Paid Ads',    value: paidOrganicTotals.paid.toLocaleString(),    color: COLORS.adPaid },
+            { label:'Organic',     value: paidOrganicTotals.organic.toLocaleString(), color: COLORS.organic },
+            { label:'Ad Share',    value: `${paidOrganicTotals.paidPct}%`,            color: COLORS.rate },
+          ]} />
+          {paidOrganicData.length === 0
+            ? <Empty msg="No source type data" />
+            : (
+              <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={paidOrganicData} margin={{ top:10, right:44, left:0, bottom:6 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                     <XAxis dataKey="monthLabel" tick={{ fontSize:11 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} />
                     <YAxis yAxisId="left"  tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
                     <YAxis yAxisId="right" orientation="right" tick={{ fontSize:11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0,100]} />
-                    <Tooltip
-                      cursor={CS}
-                      contentStyle={TS}
+                    <Tooltip cursor={CS} contentStyle={TS}
                       formatter={(v:number, name:string) =>
                         name === 'paidPct' ? [`${v}%`, 'Ad Share %'] : [v.toLocaleString(), name]
                       }
@@ -786,81 +729,55 @@ export default function GraphsView02() {
                     <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
                     <Bar yAxisId="left" dataKey="Paid Ads" stackId="src" fill={COLORS.adPaid} />
                     <Bar yAxisId="left" dataKey="Organic"  stackId="src" fill={COLORS.organic} radius={[5,5,0,0]} />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="paidPct"
-                      name="Ad Share %"
-                      stroke={COLORS.slate}
-                      strokeWidth={2}
-                      strokeDasharray="5 3"
-                      dot={{ r:3, fill:COLORS.slate, strokeWidth:0 }}
-                      activeDot={{ r:5 }}
+                    <Line yAxisId="right" type="monotone" dataKey="paidPct" name="Ad Share %"
+                      stroke={COLORS.slate} strokeWidth={2} strokeDasharray="5 3"
+                      dot={{ r:3, fill:COLORS.slate, strokeWidth:0 }} activeDot={{ r:5 }}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
+            )
+          }
+        </Card>
 
-              <StatusLegendTable rows={[
-                { metric: 'Paid Ads',  color: COLORS.adPaid,  included: [], field: 'utmMedium = "paid" / "cpc" / "ppc" / "paid_social" — ALL statuses counted' },
-                { metric: 'Organic',   color: COLORS.organic, included: [], field: 'everything else: mailc, email, direct, Hero_Section, Website_*, manual, CSV — ALL statuses counted' },
-                { metric: 'Ad Share %',color: COLORS.slate,   included: [], field: 'paid ads ÷ total leads × 100 — no status filter' },
-              ]} />
-            </>
-          )
-        }
-      </Card>
-
-      {/* ── CHART 6 — Weekly Meeting Outcomes ── */}
-      <Card
-        title="Weekly Meeting Outcomes"
-        subtitle={`Bucketed by scheduled meeting date — ${granularity} view${granularity === 'weekly' ? ' (2026 onwards)' : ''}. Completed = completed + paid.`}
-        icon={Activity}
-        iconColor="text-green-500"
-        badge={
-          <div className="flex items-center gap-2">
-            <select
-              value={granularity}
-              onChange={e => setGranularity(e.target.value as 'daily' | 'weekly' | 'monthly')}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setWeeklyView('all')}
-                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  weeklyView === 'all'
-                    ? 'bg-slate-700 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >All Leads</button>
-              <button
-                onClick={() => setWeeklyView('meta')}
-                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  weeklyView === 'meta'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >Meta Only</button>
+        {/* 6. Meeting Outcomes */}
+        <Card
+          title="Meeting Outcomes"
+          subtitle={`Bucketed by scheduled meeting date — ${granularity} view. Completed = completed + paid.`}
+          icon={Activity}
+          iconColor="text-green-500"
+          badge={
+            <div className="flex items-center gap-2">
+              <select
+                value={granularity}
+                onChange={e => setGranularity(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-300"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <div className="flex gap-1">
+                <button onClick={() => setWeeklyView('all')}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${weeklyView === 'all' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >All</button>
+                <button onClick={() => setWeeklyView('meta')}
+                  className={`px-2 py-1 rounded text-xs font-medium transition-colors ${weeklyView === 'meta' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                >Meta</button>
+              </div>
             </div>
-          </div>
-        }
-      >
-        <KpiStrip items={[
-          { label: 'Completed',   value: weeklyTotals.completed.toLocaleString(),    color: COLORS.completed },
-          { label: 'No-Show',     value: weeklyTotals.noShow.toLocaleString(),       color: COLORS.noShow },
-          { label: 'Canceled',    value: weeklyTotals.canceled.toLocaleString(),     color: COLORS.cancelled },
-          { label: 'Rescheduled', value: weeklyTotals.rescheduled.toLocaleString(),  color: COLORS.rescheduled },
-        ]} />
-
-        {weeklyData.length === 0
-          ? <Empty msg="No weekly outcome data" />
-          : (
-            <>
-              <div className="h-80">
+          }
+        >
+          <KpiStrip items={[
+            { label: 'Completed',   value: weeklyTotals.completed.toLocaleString(),   color: COLORS.completed },
+            { label: 'No-Show',     value: weeklyTotals.noShow.toLocaleString(),      color: COLORS.noShow },
+            { label: 'Canceled',    value: weeklyTotals.canceled.toLocaleString(),    color: COLORS.cancelled },
+            { label: 'Rescheduled', value: weeklyTotals.rescheduled.toLocaleString(), color: COLORS.rescheduled },
+          ]} />
+          {weeklyData.length === 0
+            ? <Empty msg="No outcome data" />
+            : (
+              <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weeklyData} margin={{ top:10, right:20, left:0, bottom:6 }} barCategoryGap={granularity === 'daily' ? '5%' : '20%'}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
@@ -875,17 +792,10 @@ export default function GraphsView02() {
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-
-              <StatusLegendTable rows={[
-                { metric: 'Completed',   color: COLORS.completed,   included: ['completed','paid'], field: 'bookingStatus = "completed" or "paid"' },
-                { metric: 'No-Show',     color: COLORS.noShow,      included: ['no-show'],          field: 'bookingStatus = "no-show"' },
-                { metric: 'Canceled',    color: COLORS.cancelled,   included: ['canceled'],         field: 'bookingStatus = "canceled"' },
-                { metric: 'Rescheduled', color: COLORS.rescheduled, included: ['rescheduled'],      field: 'bookingStatus = "rescheduled"' },
-              ]} />
-            </>
-          )
-        }
-      </Card>
+            )
+          }
+        </Card>
+      </div>
 
     </div>
   );
