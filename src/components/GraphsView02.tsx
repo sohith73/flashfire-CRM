@@ -322,27 +322,22 @@ export default function GraphsView02() {
 
   // ──────────────────────────────────────────────────────────────────
   // CHART 3 — Meta leads vs booked meetings monthly
-  // Uses utmSourceStatus filtered to source='meta_lead_ad' — exactly
-  // the same filter as the Meta Leads tab (leadSource = 'meta_lead_ad').
+  // Uses metaLeadsMonthly (leadSource='meta_lead_ad' OR metaLeadId exists).
   // Booked = completed + paid + scheduled + no-show + canceled + rescheduled
   //        = everything except not-scheduled.
   // ──────────────────────────────────────────────────────────────────
   const metaData = useMemo(() => {
-    if (!data?.utmSourceStatus) return [];
-    return data.utmSourceStatus
-      .filter(r => r.source === 'meta_lead_ad' && r.month && r.month <= currentYM)
+    if (!data?.metaLeadsMonthly) return [];
+    return data.metaLeadsMonthly
+      .filter(r => r.month && r.month <= currentYM)
       .sort((a, b) => a.month.localeCompare(b.month))
-      .map(r => {
-        const notBooked = r.notScheduled ?? 0;
-        const booked    = r.total - notBooked;
-        return {
-          monthLabel      : fmtMonth(r.month),
-          'Meta Leads'    : r.total,
-          'Booked Meeting': booked,
-          'Not Booked'    : notBooked,
-          rate            : r.total > 0 ? Math.round((booked / r.total) * 1000) / 10 : 0,
-        };
-      });
+      .map(r => ({
+        monthLabel      : fmtMonth(r.month),
+        'Meta Leads'    : r.total,
+        'Booked Meeting': r.booked,
+        'Not Booked'    : r.notBooked,
+        rate            : r.total > 0 ? Math.round((r.booked / r.total) * 1000) / 10 : 0,
+      }));
   }, [data]);
 
   const metaTotals = useMemo(() => {
