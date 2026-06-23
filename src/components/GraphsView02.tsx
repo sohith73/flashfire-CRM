@@ -82,11 +82,13 @@ interface UtmStatusRow {
   cancelled: number; rescheduled: number; scheduled: number; notScheduled: number;
 }
 
-interface WeeklyOutcome {
-  week: string;
+interface OutcomeRow {
   completed: number; noShow: number; canceled: number; rescheduled: number;
   metaCompleted: number; metaNoShow: number; metaCanceled: number; metaRescheduled: number;
 }
+interface DailyOutcome   extends OutcomeRow { day:   string }
+interface WeeklyOutcome  extends OutcomeRow { week:  string }
+interface MonthlyOutcome extends OutcomeRow { month: string }
 
 interface AnalyticsPayload {
   monthlyStatus       : MonthlyStatus[];
@@ -96,6 +98,8 @@ interface AnalyticsPayload {
   utmSourceStatus     : UtmStatusRow[];
   monthlySourceType   : SrcTypeRow[];
   weeklyOutcomes      : WeeklyOutcome[];
+  dailyOutcomes       : DailyOutcome[];
+  monthlyOutcomes     : MonthlyOutcome[];
 }
 
 // ── Card wrapper ───────────────────────────────────────────────────
@@ -412,21 +416,56 @@ export default function GraphsView02() {
     return { paid, organic, total, paidPct: total > 0 ? Math.round((paid/total)*1000)/10 : 0 };
   }, [paidOrganicData]);
 
-  // ── Chart 6 — Weekly meeting outcomes ─────────────────────────
-  const [weeklyView, setWeeklyView] = useState<'all' | 'meta'>('all');
+  // ── Chart 6 — Meeting outcomes by granularity ──────────────────
+  const [weeklyView,    setWeeklyView]    = useState<'all' | 'meta'>('all');
+  const [granularity,   setGranularity]   = useState<'daily' | 'weekly' | 'monthly'>('weekly');
 
   const weeklyData = useMemo(() => {
-    if (!data?.weeklyOutcomes) return [];
-    return data.weeklyOutcomes
-      .filter(r => r.week && r.week >= '2026')
+    if (!data) return [];
+    const isMeta = weeklyView === 'meta';
+
+    if (granularity === 'daily') {
+      return (data.dailyOutcomes ?? [])
+        .filter(r => r.day >= '2026-01-01')
+        .map(r => {
+          const d = new Date(r.day);
+          const label = `${d.toLocaleString('en', { month: 'short' })} ${d.getDate()}`;
+          return { weekLabel: label,
+            Completed: isMeta ? r.metaCompleted : r.completed,
+            'No-Show': isMeta ? r.metaNoShow    : r.noShow,
+            Canceled:  isMeta ? r.metaCanceled  : r.canceled,
+            Rescheduled: isMeta ? r.metaRescheduled : r.rescheduled,
+          };
+        });
+    }
+
+    if (granularity === 'monthly') {
+      return (data.monthlyOutcomes ?? [])
+        .map(r => {
+          const label = fmtMonth(r.month);
+          return { weekLabel: label,
+            Completed: isMeta ? r.metaCompleted : r.completed,
+            'No-Show': isMeta ? r.metaNoShow    : r.noShow,
+            Canceled:  isMeta ? r.metaCanceled  : r.canceled,
+            Rescheduled: isMeta ? r.metaRescheduled : r.rescheduled,
+          };
+        });
+    }
+
+    // weekly (default)
+    return (data.weeklyOutcomes ?? [])
+      .filter(r => r.week >= '2026')
       .map(r => {
         const [yr, wk] = r.week.split('-W');
         const label = `W${wk} '${yr?.slice(2)}`;
-        return weeklyView === 'meta'
-          ? { weekLabel: label, Completed: r.metaCompleted, 'No-Show': r.metaNoShow, Canceled: r.metaCanceled, Rescheduled: r.metaRescheduled }
-          : { weekLabel: label, Completed: r.completed,     'No-Show': r.noShow,      Canceled: r.canceled,      Rescheduled: r.rescheduled };
+        return { weekLabel: label,
+          Completed: isMeta ? r.metaCompleted : r.completed,
+          'No-Show': isMeta ? r.metaNoShow    : r.noShow,
+          Canceled:  isMeta ? r.metaCanceled  : r.canceled,
+          Rescheduled: isMeta ? r.metaRescheduled : r.rescheduled,
+        };
       });
-  }, [data, weeklyView]);
+  }, [data, weeklyView, granularity]);
 
   const weeklyTotals = useMemo(() => weeklyData.reduce(
     (a, r) => ({
@@ -775,27 +814,38 @@ export default function GraphsView02() {
       {/* ── CHART 6 — Weekly Meeting Outcomes ── */}
       <Card
         title="Weekly Meeting Outcomes"
-        subtitle="Bucketed by scheduled meeting date (2026 onwards). Completed = completed + paid."
+        subtitle={`Bucketed by scheduled meeting date — ${granularity} view${granularity === 'weekly' ? ' (2026 onwards)' : ''}. Completed = completed + paid.`}
         icon={Activity}
         iconColor="text-green-500"
         badge={
-          <div className="flex gap-1">
-            <button
-              onClick={() => setWeeklyView('all')}
-              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                weeklyView === 'all'
-                  ? 'bg-slate-700 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >All Leads</button>
-            <button
-              onClick={() => setWeeklyView('meta')}
-              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                weeklyView === 'meta'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >Meta Only</button>
+          <div className="flex items-center gap-2">
+            <select
+              value={granularity}
+              onChange={e => setGranularity(e.target.value as 'daily' | 'weekly' | 'monthly')}
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setWeeklyView('all')}
+                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  weeklyView === 'all'
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >All Leads</button>
+              <button
+                onClick={() => setWeeklyView('meta')}
+                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  weeklyView === 'meta'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >Meta Only</button>
+            </div>
           </div>
         }
       >
@@ -814,7 +864,7 @@ export default function GraphsView02() {
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={weeklyData} margin={{ top:10, right:20, left:0, bottom:6 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                    <XAxis dataKey="weekLabel" tick={{ fontSize:10 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} interval={1} />
+                    <XAxis dataKey="weekLabel" tick={{ fontSize:10 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} interval={granularity === 'daily' ? 6 : granularity === 'weekly' ? 1 : 0} />
                     <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={30} />
                     <Tooltip cursor={CS} contentStyle={TS} />
                     <Legend wrapperStyle={{ fontSize:11 }} iconType="circle" iconSize={8} />
