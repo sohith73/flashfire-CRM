@@ -322,22 +322,27 @@ export default function GraphsView02() {
 
   // ──────────────────────────────────────────────────────────────────
   // CHART 3 — Meta leads vs booked meetings monthly
-  // Uses metaLeadsMonthly from the API — same source as the Meta Leads
-  // tab chart (leadSource = 'meta_lead_ad' OR metaLeadId exists).
-  // Total = 1,685. "Booked" = any status except not-scheduled.
+  // Uses utmSourceStatus filtered to source='meta_lead_ad' — exactly
+  // the same filter as the Meta Leads tab (leadSource = 'meta_lead_ad').
+  // Booked = completed + paid + scheduled + no-show + canceled + rescheduled
+  //        = everything except not-scheduled.
   // ──────────────────────────────────────────────────────────────────
   const metaData = useMemo(() => {
-    if (!data?.metaLeadsMonthly) return [];
-    return data.metaLeadsMonthly
-      .filter(r => r.month && r.month <= currentYM)
+    if (!data?.utmSourceStatus) return [];
+    return data.utmSourceStatus
+      .filter(r => r.source === 'meta_lead_ad' && r.month && r.month <= currentYM)
       .sort((a, b) => a.month.localeCompare(b.month))
-      .map(r => ({
-        monthLabel      : fmtMonth(r.month),
-        'Meta Leads'    : r.total,
-        'Booked Meeting': r.booked,
-        'Not Booked'    : r.notBooked,
-        rate            : r.total > 0 ? Math.round((r.booked / r.total) * 1000) / 10 : 0,
-      }));
+      .map(r => {
+        const notBooked = r.notScheduled ?? 0;
+        const booked    = r.total - notBooked;
+        return {
+          monthLabel      : fmtMonth(r.month),
+          'Meta Leads'    : r.total,
+          'Booked Meeting': booked,
+          'Not Booked'    : notBooked,
+          rate            : r.total > 0 ? Math.round((booked / r.total) * 1000) / 10 : 0,
+        };
+      });
   }, [data]);
 
   const metaTotals = useMemo(() => {
@@ -558,7 +563,7 @@ export default function GraphsView02() {
       {/* ── 3. Meta Leads vs Booked ─────────────────────────────────── */}
       <Card
         title="Meta Leads vs Booked Meetings"
-        subtitle="Same source as the Meta Leads tab — leadSource = meta_lead_ad OR metaLeadId exists. Booked = any status except not-scheduled."
+        subtitle="Same filter as the Meta Leads tab — leadSource = meta_lead_ad. Booked = completed + paid + scheduled + no-show + canceled + rescheduled."
         icon={Facebook}
         iconColor="text-blue-600"
         badge={RefreshBtn}
@@ -607,12 +612,12 @@ export default function GraphsView02() {
         }
 
         <StatusLegendTable rows={[
-          { metric: 'Meta Leads',    color: COLORS.meta,      included: [],  field: 'leadSource = "meta_lead_ad" OR metaLeadId exists — same as Meta Leads tab' },
+          { metric: 'Meta Leads',    color: COLORS.meta,      included: [],  field: 'leadSource = "meta_lead_ad" — exact same filter as Meta Leads tab' },
           { metric: 'Booked',        color: COLORS.completed, included: ['completed','paid','scheduled','no-show','canceled','rescheduled'], excluded: ['not-scheduled'] },
           { metric: 'Not Booked',    color: COLORS.metaNot,   included: ['not-scheduled'], excluded: ['completed','paid','scheduled','no-show','canceled','rescheduled'] },
           { metric: 'Booking Rate %',color: COLORS.rate,      included: ['booked ÷ total meta leads × 100'], excluded: [] },
         ]} />
-        <p className="mt-2 text-[11px] text-slate-400">Same data source as the Meta Leads tab chart — total should match 1,685.</p>
+        <p className="mt-2 text-[11px] text-slate-400">Filtered to leadSource = meta_lead_ad — matches the Meta Leads tab count per month.</p>
       </Card>
 
       {/* ── 4. Monthly Leads by UTM Medium ──────────────────────────── */}
