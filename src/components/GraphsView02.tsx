@@ -90,7 +90,8 @@ interface DailyOutcome   extends OutcomeRow { day:   string }
 interface WeeklyOutcome  extends OutcomeRow { week:  string }
 interface MonthlyOutcome extends OutcomeRow { month: string }
 
-interface NoShowRow { period: string; noShow: number; total: number; rate: number }
+interface NoShowRow     { period: string; noShow: number; total: number; rate: number }
+interface NoShowCallRow { day: string; noShow: number; called: number; notCalled: number; connected: number }
 
 interface AnalyticsPayload {
   monthlyStatus       : MonthlyStatus[];
@@ -104,6 +105,7 @@ interface AnalyticsPayload {
   monthlyOutcomes     : MonthlyOutcome[];
   noShowMonthly       : NoShowRow[];
   noShowDaily         : NoShowRow[];
+  noShowCalls         : NoShowCallRow[];
 }
 
 // ── Card wrapper ───────────────────────────────────────────────────
@@ -502,6 +504,26 @@ export default function GraphsView02() {
     { noShow: 0, total: 0 }
   ), [noShowChartData]);
 
+  // ── Chart 8 — No-Show vs Calls ────────────────────────────────
+  const noShowCallsData = useMemo(() => {
+    return (data?.noShowCalls ?? []).map(r => {
+      const d = new Date(r.day);
+      const label = `${d.toLocaleString('en', { month: 'short' })} ${d.getDate()}`;
+      return {
+        label,
+        'No-Show':   r.noShow,
+        'Called':    r.called,
+        'Not Called':r.notCalled,
+        'Connected': r.connected,
+      };
+    });
+  }, [data]);
+
+  const noShowCallsTotals = useMemo(() => (data?.noShowCalls ?? []).reduce(
+    (a, r) => ({ noShow: a.noShow + r.noShow, called: a.called + r.called, notCalled: a.notCalled + r.notCalled, connected: a.connected + r.connected }),
+    { noShow: 0, called: 0, notCalled: 0, connected: 0 }
+  ), [data]);
+
   // ── Refresh button ─────────────────────────────────────────────
   const RefreshBtn = (
     <button
@@ -870,6 +892,43 @@ export default function GraphsView02() {
                     dot={{ r:3, fill:COLORS.rate, strokeWidth:0 }} activeDot={{ r:5 }}
                   />
                 </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )
+        }
+      </Card>
+
+      {/* ── Chart 8 — No-Show vs Calls Made ── */}
+      <Card
+        title="No-Show vs Calls Made"
+        subtitle="Daily view from May 2026 — how many no-shows were followed up with a call vs left uncalled. Data from Zoom call logs."
+        icon={CalendarCheck}
+        iconColor="text-red-500"
+        badge={RefreshBtn}
+      >
+        <KpiStrip items={[
+          { label: 'No-Shows',   value: noShowCallsTotals.noShow.toLocaleString(),    color: COLORS.noShow },
+          { label: 'Called',     value: noShowCallsTotals.called.toLocaleString(),     color: COLORS.completed },
+          { label: 'Not Called', value: noShowCallsTotals.notCalled.toLocaleString(),  color: COLORS.cancelled },
+          { label: 'Connected',  value: noShowCallsTotals.connected.toLocaleString(),  color: COLORS.rescheduled },
+        ]} />
+
+        {noShowCallsData.length === 0
+          ? <Empty msg="No data yet — call logs available from May 2026" />
+          : (
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={noShowCallsData} margin={{ top:10, right:20, left:0, bottom:6 }} barCategoryGap="20%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize:10 }} tickLine={false} axisLine={{ stroke:'#E2E8F0' }} interval={2} />
+                  <YAxis tick={{ fontSize:11 }} tickLine={false} axisLine={false} allowDecimals={false} width={30} />
+                  <Tooltip cursor={{ fill:'rgba(15,23,42,0.03)' }} contentStyle={TS} />
+                  <Legend wrapperStyle={{ fontSize:11 }} iconType="square" iconSize={10} />
+                  <Bar dataKey="No-Show"   fill={COLORS.noShow}      radius={[4,4,0,0]} />
+                  <Bar dataKey="Called"    fill={COLORS.completed}   radius={[4,4,0,0]} />
+                  <Bar dataKey="Not Called" fill={COLORS.cancelled}  radius={[4,4,0,0]} />
+                  <Bar dataKey="Connected" fill={COLORS.rescheduled} radius={[4,4,0,0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )
