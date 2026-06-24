@@ -106,6 +106,7 @@ interface AnalyticsPayload {
   noShowMonthly       : NoShowRow[];
   noShowDaily         : NoShowRow[];
   noShowCalls         : NoShowCallRow[];
+  noShowCallsDaily    : Array<{ day: string; called: number; notCalled: number; total: number }>;
 }
 
 // ── Card wrapper ───────────────────────────────────────────────────
@@ -484,19 +485,31 @@ export default function GraphsView02() {
   ), [weeklyData]);
 
   // ── Chart 8 — No-Show vs Calls ────────────────────────────────
-  const noShowCallsData = useMemo(() =>
-    (data?.noShowCalls ?? []).map(r => ({
+  const [callsGranularity, setCallsGranularity] = useState<'monthly' | 'daily'>('monthly');
+
+  const noShowCallsData = useMemo(() => {
+    if (callsGranularity === 'daily') {
+      return (data?.noShowCallsDaily ?? []).map(r => {
+        const d = new Date(r.day + 'T00:00:00');
+        const label = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).replace(' ', ' ');
+        return { label, 'Called': r.called, 'Not Called': r.notCalled, total: r.total };
+      });
+    }
+    return (data?.noShowCalls ?? []).map(r => ({
       label      : r.month === '2026-05' ? "22 May '26" : fmtMonth(r.month),
       'Called'   : r.called,
       'Not Called': r.notCalled,
       total      : r.total,
-    }))
-  , [data]);
+    }));
+  }, [data, callsGranularity]);
 
-  const noShowCallsTotals = useMemo(() => (data?.noShowCalls ?? []).reduce(
-    (a, r) => ({ total: a.total + r.total, called: a.called + r.called, notCalled: a.notCalled + r.notCalled }),
-    { total: 0, called: 0, notCalled: 0 }
-  ), [data]);
+  const noShowCallsTotals = useMemo(() => {
+    const src = callsGranularity === 'daily' ? (data?.noShowCallsDaily ?? []) : (data?.noShowCalls ?? []);
+    return src.reduce(
+      (a, r) => ({ total: a.total + r.total, called: a.called + r.called, notCalled: a.notCalled + r.notCalled }),
+      { total: 0, called: 0, notCalled: 0 }
+    );
+  }, [data, callsGranularity]);
 
   // ── Refresh button ─────────────────────────────────────────────
   const RefreshBtn = (
@@ -821,10 +834,22 @@ export default function GraphsView02() {
       {/* ── Chart 8 — No-Show: Called vs Not Called ── */}
       <Card
         title="No-Show Follow-Up — Called vs Not Called"
-        subtitle="✱ May data is from 22 May 2026 (Zoom call logs start date) · June onwards = full month data."
+        subtitle={callsGranularity === 'daily' ? "Last 10 days with no-show records · Daily breakdown" : "✱ May data is from 22 May 2026 (Zoom call logs start date) · June onwards = full month data."}
         icon={CalendarCheck}
         iconColor="text-red-500"
-        badge={RefreshBtn}
+        badge={
+          <div className="flex items-center gap-2">
+            <select
+              className="text-xs border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={callsGranularity}
+              onChange={e => setCallsGranularity(e.target.value as 'monthly' | 'daily')}
+            >
+              <option value="monthly">Monthly</option>
+              <option value="daily">Daily (last 10 days)</option>
+            </select>
+            {RefreshBtn}
+          </div>
+        }
       >
         <KpiStrip items={[
           { label: 'Total No-Shows', value: noShowCallsTotals.total.toLocaleString(),     color: COLORS.noShow },
