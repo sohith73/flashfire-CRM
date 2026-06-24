@@ -170,7 +170,10 @@ const CompletedTip = ({ active, payload, label }: any) => {
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c }} />
               <span className="text-slate-600 font-medium">{k}</span>
             </div>
-            <span className="font-bold text-slate-900">{(d[k]||0).toLocaleString()}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-900">{(d[k]||0).toLocaleString()}</span>
+              <span className="text-slate-400 text-[10px]">({total > 0 ? Math.round((d[k]||0)/total*100) : 0}%)</span>
+            </div>
           </div>
         ))}
         <div className="border-t border-slate-100 pt-1 flex justify-between">
