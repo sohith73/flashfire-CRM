@@ -896,7 +896,7 @@ export default function GraphsView02() {
       {/* ── Chart 8 — No-Show: Called vs Not Called ── */}
       <Card
         title="No-Show Follow-Up — Called vs Not Called"
-        subtitle="Monthly from May 2026: every no-show should receive a follow-up call. Green = called, Red = not called."
+        subtitle="Monthly from May 2026 · ✱ Zoom call logs started May 22, 2026 — data before this date shows all no-shows as Not Called."
         icon={CalendarCheck}
         iconColor="text-red-500"
         badge={RefreshBtn}
