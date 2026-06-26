@@ -1090,3 +1090,4 @@ export default function GraphsView02() {
 
     </div>
   );
+}
