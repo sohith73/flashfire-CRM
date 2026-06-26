@@ -338,7 +338,7 @@ export default function GraphsView02() {
         'No-Show'   : r.noShow,
         Cancelled   : r.cancelled,
         Rescheduled : r.rescheduled,
-        _total      : r.completed + r.paid + r.noShow + r.cancelled + r.rescheduled,
+        _total      : r.completed + r.paid + r.noShow + r.cancelled,
       }));
   }, [data]);
 
@@ -355,7 +355,7 @@ export default function GraphsView02() {
 
   // ──────────────────────────────────────────────────────────────────
   // CHART NEW — Tabbed meeting status: count + % per month
-  // Denominator = resolved meetings only (completed + paid + noShow + cancelled + rescheduled)
+  // Denominator = resolved meetings only (completed + paid + noShow + cancelled)
   // Uses scheduledEventStartTime grouping (same as Leads tab)
   // ──────────────────────────────────────────────────────────────────
   const tabbedChartData = useMemo(() => {
@@ -364,7 +364,7 @@ export default function GraphsView02() {
       .filter(r => r.month && r.month >= '2025-10' && r.month <= currentYM)
       .sort((a, b) => a.month.localeCompare(b.month))
       .map(r => {
-        const resolved = r.completed + r.paid + r.noShow + r.cancelled + r.rescheduled;
+        const resolved = r.completed + r.paid + r.noShow + r.cancelled;
         const pct = (val: number) => resolved > 0 ? Math.round((val / resolved) * 1000) / 10 : 0;
         return {
           monthLabel  : fmtMonth(r.month),
@@ -666,7 +666,7 @@ export default function GraphsView02() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900 leading-tight">Meeting Status Overview</h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">By scheduledEventStartTime · % of resolved meetings (completed + paid + no-show + cancelled + rescheduled)</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">By scheduledEventStartTime · % of resolved meetings (completed + paid + no-show + cancelled)</p>
             </div>
           </div>
           {RefreshBtn}
