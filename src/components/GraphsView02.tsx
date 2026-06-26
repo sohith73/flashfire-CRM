@@ -252,12 +252,52 @@ const StatusLegendTable = memo(({ rows }: { rows: StatusRow[] }) => (
 ));
 StatusLegendTable.displayName = 'StatusLegendTable';
 
+// ── Tab definitions for the meeting status chart ──────────────────
+type MeetingTab = 'completed' | 'paid' | 'noShow' | 'cancelled' | 'rescheduled';
+const TABS: { key: MeetingTab; label: string; color: string }[] = [
+  { key: 'completed',   label: 'Completed',   color: COLORS.completed   },
+  { key: 'paid',        label: 'Paid',         color: COLORS.paid        },
+  { key: 'noShow',      label: 'No-Show',      color: COLORS.noShow      },
+  { key: 'cancelled',   label: 'Cancelled',    color: COLORS.cancelled   },
+  { key: 'rescheduled', label: 'Rescheduled',  color: COLORS.rescheduled },
+];
+
+// Custom tooltip for the tabbed meeting chart
+const MeetingTabTip = ({ active, payload, label, tab }: any) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload || {};
+  const tabInfo = TABS.find(t => t.key === tab)!;
+  return (
+    <div style={TS} className="border p-3 min-w-[160px]">
+      <p className="font-bold text-slate-800 mb-2 text-xs">{label}</p>
+      <div className="space-y-1.5 text-xs">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: tabInfo.color }} />
+            <span className="text-slate-600 font-medium">{tabInfo.label}</span>
+          </div>
+          <span className="font-bold text-slate-900">{(d.count ?? 0).toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between gap-6">
+          <span className="text-slate-500">% of resolved</span>
+          <span className="font-bold" style={{ color: COLORS.rate }}>{d.pct ?? 0}%</span>
+        </div>
+        <div className="border-t border-slate-100 pt-1 flex justify-between">
+          <span className="text-slate-400">Resolved total</span>
+          <span className="text-slate-600 font-semibold">{(d.resolved ?? 0).toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main ───────────────────────────────────────────────────────────
 export default function GraphsView02() {
   const { token } = useCrmAuth();
-  const [data,    setData]    = useState<AnalyticsPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState<string | null>(null);
+  const [data,       setData]       = useState<AnalyticsPayload | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState<string | null>(null);
+  const [activeTab,  setActiveTab]  = useState<MeetingTab>('completed');
 
   const fetchData = useCallback(async () => {
     try {
@@ -312,6 +352,63 @@ export default function GraphsView02() {
     }),
     { completed:0, paid:0, noShow:0, cancelled:0, rescheduled:0 }
   ), [completedData]);
+
+  // ──────────────────────────────────────────────────────────────────
+  // CHART NEW — Tabbed meeting status: count + % per month
+  // Denominator = resolved meetings only (completed + paid + noShow + cancelled + rescheduled)
+  // Uses scheduledEventStartTime grouping (same as Leads tab)
+  // ──────────────────────────────────────────────────────────────────
+  const tabbedChartData = useMemo(() => {
+    if (!data?.monthlyStatus) return [];
+    return data.monthlyStatus
+      .filter(r => r.month && r.month >= '2025-10' && r.month <= currentYM)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(r => {
+        const resolved = r.completed + r.paid + r.noShow + r.cancelled + r.rescheduled;
+        const pct = (val: number) => resolved > 0 ? Math.round((val / resolved) * 1000) / 10 : 0;
+        return {
+          monthLabel  : fmtMonth(r.month),
+          completed   : r.completed,
+          paid        : r.paid,
+          noShow      : r.noShow,
+          cancelled   : r.cancelled,
+          rescheduled : r.rescheduled,
+          resolved,
+          completedPct   : pct(r.completed),
+          paidPct        : pct(r.paid),
+          noShowPct      : pct(r.noShow),
+          cancelledPct   : pct(r.cancelled),
+          rescheduledPct : pct(r.rescheduled),
+        };
+      });
+  }, [data]);
+
+  const tabbedTotals = useMemo(() => {
+    const tot = tabbedChartData.reduce(
+      (a, r) => ({
+        completed  : a.completed   + r.completed,
+        paid       : a.paid        + r.paid,
+        noShow     : a.noShow      + r.noShow,
+        cancelled  : a.cancelled   + r.cancelled,
+        rescheduled: a.rescheduled + r.rescheduled,
+        resolved   : a.resolved    + r.resolved,
+      }),
+      { completed: 0, paid: 0, noShow: 0, cancelled: 0, rescheduled: 0, resolved: 0 }
+    );
+    const pct = (v: number) => tot.resolved > 0 ? Math.round((v / tot.resolved) * 1000) / 10 : 0;
+    return { ...tot, completedPct: pct(tot.completed), paidPct: pct(tot.paid), noShowPct: pct(tot.noShow), cancelledPct: pct(tot.cancelled), rescheduledPct: pct(tot.rescheduled) };
+  }, [tabbedChartData]);
+
+  const activeTabbedData = useMemo(() => {
+    const countKey = activeTab as string;
+    const pctKey   = `${activeTab}Pct`;
+    return tabbedChartData.map(r => ({
+      monthLabel : r.monthLabel,
+      count      : (r as any)[countKey] as number,
+      pct        : (r as any)[pctKey]   as number,
+      resolved   : r.resolved,
+    }));
+  }, [tabbedChartData, activeTab]);
 
   // ──────────────────────────────────────────────────────────────────
   // CHART 2 — Completed → Paid conversion rate per month
@@ -557,6 +654,93 @@ export default function GraphsView02() {
           </p>
         </div>
         {RefreshBtn}
+      </div>
+
+      {/* ── Meeting Status Overview — Tabbed ── */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        {/* Header */}
+        <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-slate-50 border border-slate-200">
+              <CalendarCheck size={16} className="text-green-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 leading-tight">Meeting Status Overview</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">By scheduledEventStartTime · % of resolved meetings (completed + paid + no-show + cancelled + rescheduled)</p>
+            </div>
+          </div>
+          {RefreshBtn}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          {TABS.map(tab => {
+            const countKey = tab.key as string;
+            const pctKey   = `${tab.key}Pct`;
+            const count    = (tabbedTotals as any)[countKey] as number;
+            const pct      = (tabbedTotals as any)[pctKey]  as number;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex flex-col items-start px-4 py-2.5 rounded-xl border text-left transition-all ${
+                  isActive
+                    ? 'border-transparent shadow-md text-white'
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                }`}
+                style={isActive ? { background: tab.color, borderColor: tab.color } : {}}
+              >
+                <span className={`text-[10px] font-semibold uppercase tracking-wide leading-tight mb-0.5 ${isActive ? 'text-white/80' : 'text-slate-400'}`}>
+                  {tab.label}
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-xl font-extrabold leading-none">{count.toLocaleString()}</span>
+                  <span className={`text-[11px] font-bold ${isActive ? 'text-white/70' : 'text-slate-400'}`}>{pct}%</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Chart */}
+        {activeTabbedData.length === 0
+          ? <Empty msg="No data" />
+          : (
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={activeTabbedData} margin={{ top: 10, right: 50, left: 0, bottom: 6 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                  <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                  <YAxis yAxisId="left"  tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0, 100]} />
+                  <Tooltip
+                    cursor={CS}
+                    content={(props: any) => <MeetingTabTip {...props} tab={activeTab} />}
+                  />
+                  <Bar
+                    yAxisId="left"
+                    dataKey="count"
+                    name={TABS.find(t => t.key === activeTab)?.label}
+                    fill={TABS.find(t => t.key === activeTab)?.color}
+                    radius={[5, 5, 0, 0]}
+                    maxBarSize={60}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="pct"
+                    name="% of resolved"
+                    stroke={COLORS.rate}
+                    strokeWidth={2.5}
+                    dot={{ r: 4, fill: COLORS.rate, strokeWidth: 0 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )
+        }
       </div>
 
       {/* ── Row 1: Charts 1 & 2 ── */}
