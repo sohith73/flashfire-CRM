@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import {
   Loader2, RefreshCcw, CalendarCheck, TrendingUp,
-  Facebook, BarChart2, Activity,
+  Facebook, BarChart2, Activity, Users,
 } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 
@@ -116,6 +116,22 @@ interface MonthlyOutcome extends OutcomeRow { month: string }
 
 interface NoShowRow     { period: string; noShow: number; total: number; rate: number }
 interface NoShowCallRow { month: string; called: number; notCalled: number; total: number }
+
+interface PaidClientMonth {
+  month: string;
+  total: number;
+  ignite: number;
+  professional: number;
+  executive: number;
+  prime: number;
+}
+
+interface PaidClientsPayload {
+  totalPaidClients: number;
+  plans: string[];
+  monthly: PaidClientMonth[];
+  byPlan: Array<{ plan: string; count: number }>;
+}
 
 interface AnalyticsPayload {
   monthlyStatus       : MonthlyStatus[];
@@ -337,9 +353,10 @@ const AvgTip = ({ active, payload, label, color }: any) => {
 // ── Main ───────────────────────────────────────────────────────────
 export default function GraphsView02() {
   const { token } = useCrmAuth();
-  const [data,       setData]       = useState<AnalyticsPayload | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState<string | null>(null);
+  const [data,         setData]         = useState<AnalyticsPayload | null>(null);
+  const [paidClients,  setPaidClients]  = useState<PaidClientsPayload | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
   const [completedView, setCompletedView] = useState<'total' | 'average'>('total');
 
   const fetchData = useCallback(async () => {
@@ -348,10 +365,15 @@ export default function GraphsView02() {
       setError(null);
       const headers: HeadersInit = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res  = await fetch(`${API_BASE_URL}/api/leads/analytics`, { headers });
-      const json = await res.json();
+      const [res, pcRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/leads/analytics`, { headers }),
+        fetch(`${API_BASE_URL}/api/crm/paid-clients/analytics`, { headers }),
+      ]);
+      const json   = await res.json();
+      const pcJson = await pcRes.json();
       if (!res.ok || !json.success) throw new Error(json.message || `HTTP ${res.status}`);
       setData(json.data as AnalyticsPayload);
+      if (pcRes.ok && pcJson.success) setPaidClients(pcJson.data as PaidClientsPayload);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -469,25 +491,30 @@ export default function GraphsView02() {
 
   // ──────────────────────────────────────────────────────────────────
   // CHART 2 — Completed → Paid conversion rate per month
-  // Rate = Paid ÷ (Completed + Paid) × 100
-  // Both "completed" and "paid" statuses had their meeting; "paid" also bought.
+  // "Paid" bar = users created that month in the Dashboard DB (actual paid clients).
+  // Rate = Dashboard Paid ÷ (Completed + Dashboard Paid) × 100
   // ──────────────────────────────────────────────────────────────────
   const convData = useMemo(() => {
     if (!data?.monthlyStatus) return [];
+    // Build a quick lookup: month → dashboard paid count
+    const dashMap: Record<string, number> = {};
+    (paidClients?.monthly ?? []).forEach(m => { dashMap[m.month] = m.total; });
+
     return data.monthlyStatus
       .filter(r => r.month && r.month <= currentYM)
       .sort((a,b) => a.month.localeCompare(b.month))
       .map(r => {
-        const meetingsDone = r.completed + r.paid;
-        const rate = meetingsDone > 0 ? Math.round((r.paid / meetingsDone) * 1000) / 10 : 0;
+        const dashPaid     = dashMap[r.month] ?? r.paid;
+        const meetingsDone = r.completed + dashPaid;
+        const rate = meetingsDone > 0 ? Math.round((dashPaid / meetingsDone) * 1000) / 10 : 0;
         return {
-          monthLabel   : fmtMonth(r.month),
+          monthLabel     : fmtMonth(r.month),
           'Meetings Done': meetingsDone,
-          'Paid'         : r.paid,
+          'Paid'         : dashPaid,
           rate,
         };
       });
-  }, [data]);
+  }, [data, paidClients]);
 
   const convTotals = useMemo(() => {
     const done = convData.reduce((s,r) => s + r['Meetings Done'], 0);
@@ -875,16 +902,16 @@ export default function GraphsView02() {
 
         {/* 2. Completed → Paid Conversion Rate */}
         <Card
-          title="Completed → Paid Conversion Rate"
-          subtitle='Paid ÷ (Completed + Paid) — orange line shows closing rate over time'
+          title="Paid — Monthly"
+          subtitle='% = Paid ÷ (completed + paid) — Paid count from Dashboard DB (actual joined users)'
           icon={TrendingUp}
           iconColor="text-indigo-600"
           badge={RefreshBtn}
         >
           <KpiStrip items={[
-            { label:'Meetings Done',  value: convTotals.done,        color: COLORS.completed },
-            { label:'Converted Paid', value: convTotals.paid,        color: COLORS.paid },
-            { label:'Conversion Rate',value: `${convTotals.rate}%`,  color: COLORS.rate },
+            { label:'Meetings Done',  value: convTotals.done,                                              color: COLORS.completed },
+            { label:'Converted Paid', value: (paidClients?.totalPaidClients ?? convTotals.paid).toLocaleString(), color: COLORS.paid },
+            { label:'Conversion Rate',value: `${convTotals.rate}%`,                                        color: COLORS.rate },
           ]} />
           {convData.length === 0
             ? <Empty msg="No data" />
