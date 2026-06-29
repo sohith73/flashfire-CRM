@@ -30,6 +30,29 @@ const currentYM = (() => {
   return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
 })();
 
+// Working days in a month = total days − Sundays.
+// For the current month, count only days that have already elapsed (up to today).
+// For future months, returns 0.
+const workingDaysInMonth = (ym: string): number => {
+  const [yStr, mStr] = ym.split('-');
+  const year  = parseInt(yStr, 10);
+  const month = parseInt(mStr, 10) - 1;
+  if (Number.isNaN(year) || Number.isNaN(month)) return 0;
+
+  const now       = new Date();
+  const isCurrent = ym === currentYM;
+  const isFuture  = ym > currentYM;
+  if (isFuture) return 0;
+
+  const lastDay = isCurrent ? now.getDate() : new Date(year, month + 1, 0).getDate();
+  let working = 0;
+  for (let d = 1; d <= lastDay; d++) {
+    const wd = new Date(year, month, d).getDay(); // 0 = Sunday
+    if (wd !== 0) working++;
+  }
+  return working;
+};
+
 // ── Shared styles ─────────────────────────────────────────────────
 const TS = {
   borderRadius: 10,
@@ -282,12 +305,42 @@ const StatusTip = ({ active, payload, label, color, statusLabel, denominatorLabe
   );
 };
 
+// Tooltip for the Completed "Average / day" view.
+const AvgTip = ({ active, payload, label, color }: any) => {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload || {};
+  return (
+    <div style={TS} className="border p-3 min-w-[180px]">
+      <p className="font-bold text-slate-800 mb-2 text-xs">{label}</p>
+      <div className="space-y-1.5 text-xs">
+        <div className="flex items-center justify-between gap-6">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+            <span className="text-slate-600 font-medium">Completed meetings</span>
+          </div>
+          <span className="font-bold text-slate-900">{(d.completed ?? 0).toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between gap-6">
+          <span className="text-slate-500">Working days {label === fmtMonth(currentYM) ? '(till today)' : ''}</span>
+          <span className="font-bold text-slate-700">{d.workingDays ?? 0}</span>
+        </div>
+        <div className="border-t border-slate-100 pt-1 flex justify-between">
+          <span className="text-slate-500 font-semibold">Average / day</span>
+          <span className="font-bold" style={{ color: COLORS.rate }}>{d.completedAvg ?? 0}</span>
+        </div>
+        <div className="text-[10px] text-slate-400 pt-0.5">excludes Sundays</div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main ───────────────────────────────────────────────────────────
 export default function GraphsView02() {
   const { token } = useCrmAuth();
   const [data,       setData]       = useState<AnalyticsPayload | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
+  const [completedView, setCompletedView] = useState<'total' | 'average'>('total');
 
   const fetchData = useCallback(async () => {
     try {
@@ -363,8 +416,13 @@ export default function GraphsView02() {
         const paidBase    = r.completed + r.paid;
         const noShowBase  = r.completed + r.paid + r.noShow;
         const pct = (val: number, base: number) => base > 0 ? Math.round((val / base) * 1000) / 10 : 0;
+        const workingDays = workingDaysInMonth(r.month);
+        const completedAvg = workingDays > 0 ? Math.round((r.completed / workingDays) * 10) / 10 : 0;
         return {
           monthLabel      : fmtMonth(r.month),
+          monthKey        : r.month,
+          workingDays,
+          completedAvg,
           completed       : r.completed,
           paid            : r.paid,
           noShow          : r.noShow,
@@ -684,14 +742,20 @@ export default function GraphsView02() {
           subtitle: 'completed + paid + no-show + cancelled + rescheduled + ignored',
         },
       ] as const).map(({ key, label, color, countKey, pctKey, denomKey, subtitle }) => {
+        const isCompletedAvg = key === 'completed' && completedView === 'average';
         const chartData = statusChartData.map(r => ({
           monthLabel  : r.monthLabel,
-          count       : (r as any)[countKey] as number,
+          count       : isCompletedAvg ? r.completedAvg : (r as any)[countKey] as number,
           pct         : (r as any)[pctKey]   as number,
           denominator : (r as any)[denomKey] as number,
+          completed   : r.completed,
+          workingDays : r.workingDays,
+          completedAvg: r.completedAvg,
         }));
         const totalCount = (statusTotals as any)[countKey] as number;
         const totalPct   = (statusTotals as any)[pctKey]   as number;
+        const totalWorkingDays = statusChartData.reduce((s, r) => s + r.workingDays, 0);
+        const overallAvg = totalWorkingDays > 0 ? Math.round((statusTotals.completed / totalWorkingDays) * 10) / 10 : 0;
         return (
           <div key={key} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
@@ -701,12 +765,37 @@ export default function GraphsView02() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 leading-tight">{label} — Monthly</h3>
-                  <p className="text-[11px] text-slate-500 mt-0.5">% = {label} ÷ ({subtitle})</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isCompletedAvg
+                      ? 'Avg/day = completed ÷ working days (excludes Sundays · current month uses elapsed days only)'
+                      : `% = ${label} ÷ (${subtitle})`}
+                  </p>
                 </div>
               </div>
-              <div className="flex flex-col items-end">
-                <span className="text-xl font-extrabold text-slate-900">{totalCount.toLocaleString()}</span>
-                <span className="text-[11px] font-bold" style={{ color: COLORS.rate }}>{totalPct}% overall</span>
+              <div className="flex items-center gap-3">
+                {key === 'completed' && (
+                  <select
+                    value={completedView}
+                    onChange={e => setCompletedView(e.target.value as 'total' | 'average')}
+                    className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    <option value="total">Total</option>
+                    <option value="average">Average / day</option>
+                  </select>
+                )}
+                <div className="flex flex-col items-end">
+                  {isCompletedAvg ? (
+                    <>
+                      <span className="text-xl font-extrabold text-slate-900">{overallAvg}</span>
+                      <span className="text-[11px] font-bold" style={{ color: COLORS.rate }}>avg/day overall</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xl font-extrabold text-slate-900">{totalCount.toLocaleString()}</span>
+                      <span className="text-[11px] font-bold" style={{ color: COLORS.rate }}>{totalPct}% overall</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
             {chartData.length === 0
@@ -717,16 +806,22 @@ export default function GraphsView02() {
                     <ComposedChart data={chartData} margin={{ top: 10, right: 50, left: 0, bottom: 6 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                       <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
-                      <YAxis yAxisId="left"  tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={34} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0, 100]} />
+                      <YAxis yAxisId="left"  tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={isCompletedAvg} width={34} />
+                      {!isCompletedAvg && (
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0, 100]} />
+                      )}
                       <Tooltip
                         cursor={CS}
                         content={(props: any) => (
-                          <StatusTip {...props} color={color} statusLabel={label} denominatorLabel={subtitle} />
+                          isCompletedAvg
+                            ? <AvgTip {...props} color={color} />
+                            : <StatusTip {...props} color={color} statusLabel={label} denominatorLabel={subtitle} />
                         )}
                       />
-                      <Bar yAxisId="left" dataKey="count" name={label} fill={color} radius={[5, 5, 0, 0]} maxBarSize={60} />
-                      <Line yAxisId="right" type="monotone" dataKey="pct" name="%" stroke={COLORS.rate} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.rate, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                      <Bar yAxisId="left" dataKey="count" name={isCompletedAvg ? 'Avg / day' : label} fill={color} radius={[5, 5, 0, 0]} maxBarSize={60} />
+                      {!isCompletedAvg && (
+                        <Line yAxisId="right" type="monotone" dataKey="pct" name="%" stroke={COLORS.rate} strokeWidth={2.5} dot={{ r: 4, fill: COLORS.rate, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                      )}
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
