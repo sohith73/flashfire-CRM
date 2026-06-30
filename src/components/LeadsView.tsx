@@ -24,6 +24,7 @@ import {
   Info,
   Trash2,
   FileText,
+  Phone,
   Workflow,
   Plus,
   SlidersHorizontal,
@@ -2189,6 +2190,15 @@ export default function LeadsView({
                           >
                             <Trash2 size={9} />
                           </button>
+                        )}
+                        {row.phone && row.phone !== 'Not Specified' && (
+                          <a
+                            href={`zoomphonecall://${row.phone.replace(/[^\d+]/g, '')}`}
+                            title={`Call ${row.phone} via Zoom Phone`}
+                            className="inline-flex items-center justify-center p-0.5 rounded bg-blue-500 text-white hover:bg-blue-600 transition flex-shrink-0"
+                          >
+                            <Phone size={9} />
+                          </a>
                         )}
                       </div>
                       {row.notes && (
