@@ -399,75 +399,99 @@ export default function GraphsView02() {
       const headers: HeadersInit = {};
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      // Fetch all-time approved claims for Siddhartha
-      const [allTimeRes, juneRes, attendanceRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/bda/analysis?bdaEmail=siddhartha%40flashfirehq.com`, { headers }),
-        fetch(`${API_BASE_URL}/api/bda/analysis?bdaEmail=siddhartha%40flashfirehq.com&fromDate=2026-06-01&toDate=2026-06-30`, { headers }),
+      // /api/bda/leads/:email returns all paid bookings (with bdaApprovalStatus per lead)
+      // /api/bda/analysis gives overall statusBreakdown (paid/completed counts across all bookings)
+      const [leadsRes, analysisRes] = await Promise.all([
         fetch(`${API_BASE_URL}/api/bda/leads/siddhartha%40flashfirehq.com`, { headers }),
+        fetch(`${API_BASE_URL}/api/bda/analysis?bdaEmail=siddhartha%40flashfirehq.com`, { headers }),
       ]);
 
-      const allTimeJson = await allTimeRes.json();
-      const juneJson    = await juneRes.json();
-      const attendJson  = await attendanceRes.json();
+      const leadsJson    = await leadsRes.json();
+      const analysisJson = await analysisRes.json();
 
-      const sid = allTimeJson?.data?.bdaPerformance?.find((b: any) => b._id === 'siddhartha@flashfirehq.com');
-      const sidJune = juneJson?.data?.bdaPerformance?.find((b: any) => b._id === 'siddhartha@flashfirehq.com');
-      const leads: any[] = attendJson?.data?.leads ?? [];
+      // leads = all paid bookings for Siddhartha, each with bdaApprovalStatus
+      const leads: any[] = leadsJson?.data?.leads ?? [];
 
-      // Monthly breakdown from leads (by claimedAt)
-      const MONTH_LABELS: Record<string,string> = {
-        '2026-02':'Feb','2026-03':'Mar','2026-04':'Apr','2026-05':'May','2026-06':'Jun',
+      // bdaPerformance row for Siddhartha (only present if he has approved+paid bookings)
+      const sid = analysisJson?.data?.bdaPerformance?.find(
+        (b: any) => b._id === 'siddhartha@flashfirehq.com'
+      );
+
+      // Compute approval stats directly from leads (source of truth)
+      const totalApproved = leads.filter((l: any) => l.bdaApprovalStatus === 'approved').length;
+      const totalPending  = leads.filter((l: any) => l.bdaApprovalStatus === 'pending').length;
+      const totalDenied   = leads.filter((l: any) => l.bdaApprovalStatus === 'denied').length;
+      const totalRevenue  = leads
+        .filter((l: any) => l.bdaApprovalStatus === 'approved')
+        .reduce((s: number, l: any) => s + (l.paymentPlan?.price ?? 0), 0);
+
+      // Monthly breakdown by claimedAt month
+      // NOTE: all leads here have bookingStatus='paid' (that's what the endpoint returns)
+      // We track: how many paid leads were claimed in each month, and their approval status
+      const MONTH_LABELS: Record<string, string> = {
+        '2026-01': 'Jan', '2026-02': 'Feb', '2026-03': 'Mar',
+        '2026-04': 'Apr', '2026-05': 'May', '2026-06': 'Jun',
+        '2026-07': 'Jul',
       };
       const monthMap: Record<string, { meetings: number; paid: number; completed: number; noShow: number }> = {};
       leads.forEach((l: any) => {
-        const key = l.claimedBy?.claimedAt ? new Date(l.claimedBy.claimedAt).toISOString().slice(0, 7) : null;
-        if (!key || !MONTH_LABELS[key]) return;
+        const ca = l.claimedBy?.claimedAt;
+        if (!ca) return;
+        const key = new Date(ca).toISOString().slice(0, 7);
+        if (!MONTH_LABELS[key]) return;
         if (!monthMap[key]) monthMap[key] = { meetings: 0, paid: 0, completed: 0, noShow: 0 };
         monthMap[key].meetings++;
-        if (l.bookingStatus === 'paid') monthMap[key].paid++;
-        if (l.bookingStatus === 'completed') monthMap[key].completed++;
-        if (l.bookingStatus === 'no-show') monthMap[key].noShow++;
-      });
-
-      // Plan breakdown
-      const planMap: Record<string,number> = {};
-      leads.filter((l:any)=>l.bdaApprovalStatus==='approved').forEach((l:any)=>{
-        const plan = l.paymentPlan?.name || 'Unknown';
-        planMap[plan] = (planMap[plan]||0)+1;
+        // All leads from this endpoint are bookingStatus=paid; track approved vs pending as "paid vs pending"
+        if (l.bdaApprovalStatus === 'approved') monthMap[key].paid++;
+        else monthMap[key].completed++; // pending/denied shown as "not yet approved"
       });
 
       const monthly = Object.entries(monthMap)
-        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([month, v]) => ({ month: MONTH_LABELS[month] || month, ...v }));
 
-      const totalApproved = sid?.totalClaimed ?? 0;
-      const totalRevenue  = sid?.totalRevenue  ?? 0;
-      const junePaid      = sidJune?.paid ?? 0;
-      const juneCompleted = sidJune?.completed ?? 0;
+      // Plan breakdown (approved leads only)
+      const planMap: Record<string, number> = {};
+      leads
+        .filter((l: any) => l.bdaApprovalStatus === 'approved')
+        .forEach((l: any) => {
+          const plan = l.paymentPlan?.name || 'Unknown';
+          planMap[plan] = (planMap[plan] || 0) + 1;
+        });
 
-      // June stats — from leads claimed in June
-      const juneLeads = leads.filter((l:any)=>{
+      // June stats — leads claimed in June 2026
+      const juneLeads = leads.filter((l: any) => {
         const ca = l.claimedBy?.claimedAt;
-        return ca && ca >= '2026-06-01' && ca <= '2026-06-30';
+        return ca && ca >= '2026-06-01' && ca <= '2026-06-30T23:59:59';
       });
-      const junePendingLeads   = juneLeads.filter((l:any)=>l.bdaApprovalStatus==='pending');
-      const junePendingRevenue = junePendingLeads.reduce((s:number,l:any)=>s+(l.paymentPlan?.price??0),0);
+      const junePaid      = juneLeads.filter((l: any) => l.bdaApprovalStatus === 'approved').length;
+      const juneCompleted = juneLeads.filter((l: any) => l.bdaApprovalStatus !== 'approved').length;
+      const junePendingLeads   = juneLeads.filter((l: any) => l.bdaApprovalStatus === 'pending');
+      const junePendingRevenue = junePendingLeads.reduce(
+        (s: number, l: any) => s + (l.paymentPlan?.price ?? 0), 0
+      );
+
+      // Use sid.totalClaimed as fallback for totalApproved if it differs (server computes it too)
+      const approvedCount = sid?.totalClaimed ?? totalApproved;
+      const revenue       = sid?.totalRevenue  ?? totalRevenue;
 
       setBdaData({
         totalMeetings: leads.length,
-        totalApproved,
-        totalPending: leads.filter((l:any)=>l.bdaApprovalStatus==='pending').length,
-        totalDenied: leads.filter((l:any)=>l.bdaApprovalStatus==='denied').length,
-        totalRevenue,
-        conversionRate: leads.length > 0 ? Math.round((totalApproved / leads.length) * 1000) / 10 : 0,
-        paidVsCompleted: (junePaid + juneCompleted) > 0 ? Math.round((junePaid / (junePaid + juneCompleted)) * 1000) / 10 : 0,
+        totalApproved: approvedCount,
+        totalPending,
+        totalDenied,
+        totalRevenue: revenue,
+        conversionRate: leads.length > 0 ? Math.round((approvedCount / leads.length) * 1000) / 10 : 0,
+        paidVsCompleted: (junePaid + juneCompleted) > 0
+          ? Math.round((junePaid / (junePaid + juneCompleted)) * 1000) / 10
+          : 0,
         monthly,
-        planBreakdown: Object.entries(planMap).map(([plan,count])=>({ plan, count })),
+        planBreakdown: Object.entries(planMap).map(([plan, count]) => ({ plan, count })),
         juneStats: {
           meetings: juneLeads.length,
           paid: junePaid,
           completed: juneCompleted,
-          noShow: sidJune?.paid ?? 0,
+          noShow: 0,
           pending: junePendingLeads.length,
           pendingRevenue: junePendingRevenue,
         },
@@ -1380,9 +1404,9 @@ export default function GraphsView02() {
               <div className="flex flex-wrap gap-2.5">
                 {[
                   { label: 'Leads in June',     value: bdaData.juneStats.meetings,                              color: '#6366F1' },
-                  { label: 'Paid',              value: bdaData.juneStats.paid,                                  color: '#22C55E' },
-                  { label: 'Completed (No Pay)',value: bdaData.juneStats.completed,                             color: '#14B8A6' },
-                  { label: 'Paid÷Completed %',  value: `${bdaData.paidVsCompleted}%`,                          color: '#F97316' },
+                  { label: 'Approved',          value: bdaData.juneStats.paid,                                  color: '#22C55E' },
+                  { label: 'Pending/Denied',    value: bdaData.juneStats.completed,                             color: '#14B8A6' },
+                  { label: 'Approval %',        value: `${bdaData.paidVsCompleted}%`,                          color: '#F97316' },
                   { label: 'Pending Claims',    value: bdaData.juneStats.pending,                              color: '#F59E0B' },
                   { label: 'Pending Revenue',   value: `$${bdaData.juneStats.pendingRevenue.toLocaleString()}`, color: '#8B5CF6' },
                 ].map(({ label, value, color }) => (
@@ -1404,7 +1428,7 @@ export default function GraphsView02() {
                   <h3 className="text-sm font-bold text-slate-900">Monthly Leads — Paid vs Completed</h3>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-4">
-                  Paid = booking converted to payment · Completed = meeting done, no payment
+                  Approved = admin confirmed BDA gets credit · Pending/Denied = not yet approved
                 </p>
                 {bdaData.monthly.length === 0 ? (
                   <div className="h-64 flex items-center justify-center text-slate-400 text-sm">No monthly data</div>
@@ -1422,8 +1446,8 @@ export default function GraphsView02() {
                           formatter={(v: number, name: string) => name === 'Paid%' ? [`${v}%`, 'Paid ÷ Completed %'] : [v, name]}
                         />
                         <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                        <Bar yAxisId="left" dataKey="paid"      name="Paid"      fill="#6366F1" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                        <Bar yAxisId="left" dataKey="completed" name="Completed" fill="#14B8A6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        <Bar yAxisId="left" dataKey="paid"      name="Approved"       fill="#6366F1" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        <Bar yAxisId="left" dataKey="completed" name="Pending/Denied" fill="#14B8A6" radius={[4, 4, 0, 0]} maxBarSize={40} />
                         <Line
                           yAxisId="right"
                           type="monotone"
