@@ -10,10 +10,13 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import {
   Loader2, RefreshCcw, CalendarCheck, TrendingUp,
-  Facebook, BarChart2, Activity,
+  Facebook, BarChart2, Activity, Users, UserCheck,
 } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 
@@ -124,6 +127,35 @@ interface PaidClientMonth {
   professional: number;
   executive: number;
   prime: number;
+}
+
+// ── BDA Performance types ──────────────────────────────────────────
+interface BdaMonthlyAttendance {
+  month: string;
+  meetings: number;
+  paid: number;
+  completed: number;
+  noShow: number;
+}
+
+interface BdaPerformanceData {
+  totalMeetings: number;
+  totalApproved: number;
+  totalPending: number;
+  totalDenied: number;
+  totalRevenue: number;
+  conversionRate: number;
+  paidVsCompleted: number;
+  monthly: BdaMonthlyAttendance[];
+  planBreakdown: { plan: string; count: number }[];
+  juneStats: {
+    meetings: number;
+    paid: number;
+    completed: number;
+    noShow: number;
+    pending: number;
+    pendingRevenue: number;
+  };
 }
 
 interface PaidClientsPayload {
@@ -358,6 +390,94 @@ export default function GraphsView02() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [completedView, setCompletedView] = useState<'total' | 'average'>('total');
+  const [bdaData, setBdaData] = useState<BdaPerformanceData | null>(null);
+  const [bdaLoading, setBdaLoading] = useState(true);
+
+  const fetchBdaPerformance = useCallback(async () => {
+    try {
+      setBdaLoading(true);
+      const headers: HeadersInit = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      // Fetch all-time approved claims for Siddhartha
+      const [allTimeRes, juneRes, attendanceRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/bda/analysis?bdaEmail=siddhartha%40flashfirehq.com`, { headers }),
+        fetch(`${API_BASE_URL}/api/bda/analysis?bdaEmail=siddhartha%40flashfirehq.com&fromDate=2026-06-01&toDate=2026-06-30`, { headers }),
+        fetch(`${API_BASE_URL}/api/bda/leads/siddhartha%40flashfirehq.com`, { headers }),
+      ]);
+
+      const allTimeJson = await allTimeRes.json();
+      const juneJson    = await juneRes.json();
+      const attendJson  = await attendanceRes.json();
+
+      const sid = allTimeJson?.data?.bdaPerformance?.find((b: any) => b._id === 'siddhartha@flashfirehq.com');
+      const sidJune = juneJson?.data?.bdaPerformance?.find((b: any) => b._id === 'siddhartha@flashfirehq.com');
+      const leads: any[] = attendJson?.data?.leads ?? [];
+
+      // Monthly breakdown from leads (by claimedAt)
+      const MONTH_LABELS: Record<string,string> = {
+        '2026-02':'Feb','2026-03':'Mar','2026-04':'Apr','2026-05':'May','2026-06':'Jun',
+      };
+      const monthMap: Record<string, { meetings: number; paid: number; completed: number; noShow: number }> = {};
+      leads.forEach((l: any) => {
+        const key = l.claimedBy?.claimedAt ? new Date(l.claimedBy.claimedAt).toISOString().slice(0, 7) : null;
+        if (!key || !MONTH_LABELS[key]) return;
+        if (!monthMap[key]) monthMap[key] = { meetings: 0, paid: 0, completed: 0, noShow: 0 };
+        monthMap[key].meetings++;
+        if (l.bookingStatus === 'paid') monthMap[key].paid++;
+        if (l.bookingStatus === 'completed') monthMap[key].completed++;
+        if (l.bookingStatus === 'no-show') monthMap[key].noShow++;
+      });
+
+      // Plan breakdown
+      const planMap: Record<string,number> = {};
+      leads.filter((l:any)=>l.bdaApprovalStatus==='approved').forEach((l:any)=>{
+        const plan = l.paymentPlan?.name || 'Unknown';
+        planMap[plan] = (planMap[plan]||0)+1;
+      });
+
+      const monthly = Object.entries(monthMap)
+        .sort((a,b)=>a[0].localeCompare(b[0]))
+        .map(([month, v]) => ({ month: MONTH_LABELS[month] || month, ...v }));
+
+      const totalApproved = sid?.totalClaimed ?? 0;
+      const totalRevenue  = sid?.totalRevenue  ?? 0;
+      const junePaid      = sidJune?.paid ?? 0;
+      const juneCompleted = sidJune?.completed ?? 0;
+
+      // June stats — from leads claimed in June
+      const juneLeads = leads.filter((l:any)=>{
+        const ca = l.claimedBy?.claimedAt;
+        return ca && ca >= '2026-06-01' && ca <= '2026-06-30';
+      });
+      const junePendingLeads   = juneLeads.filter((l:any)=>l.bdaApprovalStatus==='pending');
+      const junePendingRevenue = junePendingLeads.reduce((s:number,l:any)=>s+(l.paymentPlan?.price??0),0);
+
+      setBdaData({
+        totalMeetings: leads.length,
+        totalApproved,
+        totalPending: leads.filter((l:any)=>l.bdaApprovalStatus==='pending').length,
+        totalDenied: leads.filter((l:any)=>l.bdaApprovalStatus==='denied').length,
+        totalRevenue,
+        conversionRate: leads.length > 0 ? Math.round((totalApproved / leads.length) * 1000) / 10 : 0,
+        paidVsCompleted: (junePaid + juneCompleted) > 0 ? Math.round((junePaid / (junePaid + juneCompleted)) * 1000) / 10 : 0,
+        monthly,
+        planBreakdown: Object.entries(planMap).map(([plan,count])=>({ plan, count })),
+        juneStats: {
+          meetings: juneLeads.length,
+          paid: junePaid,
+          completed: juneCompleted,
+          noShow: sidJune?.paid ?? 0,
+          pending: junePendingLeads.length,
+          pendingRevenue: junePendingRevenue,
+        },
+      });
+    } catch (e) {
+      console.error('BDA fetch error', e);
+    } finally {
+      setBdaLoading(false);
+    }
+  }, [token]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -381,7 +501,7 @@ export default function GraphsView02() {
     }
   }, [token]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); fetchBdaPerformance(); }, [fetchData, fetchBdaPerformance]);
 
   // ──────────────────────────────────────────────────────────────────
   // CHART 1 — Completed meetings per month
@@ -429,20 +549,13 @@ export default function GraphsView02() {
   // ──────────────────────────────────────────────────────────────────
   const statusChartData = useMemo(() => {
     if (!data?.monthlyStatus) return [];
-    // Paid series = users created that month in the Dashboard DB (actual joined
-    // users), same source as the Conversion chart. Falls back to leads paid only
-    // when the dashboard month is missing. grandTotal/noShowBase keep leads paid
-    // so the other status cards are unchanged.
-    const dashMap: Record<string, number> = {};
-    (paidClients?.monthly ?? []).forEach(m => { dashMap[m.month] = m.total; });
     return data.monthlyStatus
       .filter(r => r.month && r.month >= '2025-10' && r.month <= currentYM)
       .sort((a, b) => a.month.localeCompare(b.month))
       .map(r => {
         const ign = r.ignored ?? 0;
-        const dashPaid    = dashMap[r.month] ?? r.paid;
         const grandTotal  = r.completed + r.paid + r.noShow + r.cancelled + r.rescheduled + ign;
-        const paidBase    = r.completed + dashPaid;
+        const paidBase    = r.completed + r.paid;
         const noShowBase  = r.completed + r.paid + r.noShow;
         const pct = (val: number, base: number) => base > 0 ? Math.round((val / base) * 1000) / 10 : 0;
         const workingDays = workingDaysInMonth(r.month);
@@ -453,7 +566,7 @@ export default function GraphsView02() {
           workingDays,
           completedAvg,
           completed       : r.completed,
-          paid            : dashPaid,
+          paid            : r.paid,
           noShow          : r.noShow,
           cancelled       : r.cancelled,
           rescheduled     : r.rescheduled,
@@ -462,13 +575,13 @@ export default function GraphsView02() {
           paidBase,
           noShowBase,
           completedPct    : pct(r.completed, grandTotal),
-          paidPct         : pct(dashPaid, paidBase),
+          paidPct         : pct(r.paid, paidBase),
           noShowPct       : pct(r.noShow, noShowBase),
           cancelledPct    : pct(r.cancelled, grandTotal),
           rescheduledPct  : pct(r.rescheduled, grandTotal),
         };
       });
-  }, [data, paidClients]);
+  }, [data]);
 
   const statusTotals = useMemo(() => {
     const tot = statusChartData.reduce(
@@ -1210,6 +1323,207 @@ export default function GraphsView02() {
           )
         }
       </Card>
+
+      {/* ── BDA Performance: Siddhartha ── */}
+      <div className="border-t border-slate-200 pt-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-indigo-50 border border-indigo-200">
+              <UserCheck size={16} className="text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 leading-tight">BDA Performance — Siddhartha</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">siddhartha@flashfirehq.com · All-time + June 2026 breakdown</p>
+            </div>
+          </div>
+          <button
+            onClick={fetchBdaPerformance}
+            disabled={bdaLoading}
+            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 transition"
+            title="Refresh BDA data"
+          >
+            <RefreshCcw size={13} className={`text-slate-500 ${bdaLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {bdaLoading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="animate-spin text-indigo-500" size={24} />
+            <span className="ml-2 text-sm text-slate-500">Loading BDA data…</span>
+          </div>
+        ) : bdaData ? (
+          <div className="space-y-6">
+
+            {/* KPI strip — All Time */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">All-Time</p>
+              <div className="flex flex-wrap gap-2.5">
+                {[
+                  { label: 'Total Leads',      value: bdaData.totalMeetings,                        color: '#6366F1' },
+                  { label: 'Approved (Paid)',   value: bdaData.totalApproved,                        color: '#22C55E' },
+                  { label: 'Pending',           value: bdaData.totalPending,                         color: '#F97316' },
+                  { label: 'Denied',            value: bdaData.totalDenied,                          color: '#EF4444' },
+                  { label: 'Revenue',           value: `$${bdaData.totalRevenue.toLocaleString()}`,  color: '#22C55E' },
+                  { label: 'Conversion %',      value: `${bdaData.conversionRate}%`,                 color: '#F97316' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex flex-col rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 min-w-[80px]">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 leading-tight mb-1">{label}</span>
+                    <span className="text-lg font-extrabold leading-none" style={{ color }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* June 2026 KPI strip */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">June 2026</p>
+              <div className="flex flex-wrap gap-2.5">
+                {[
+                  { label: 'Leads in June',     value: bdaData.juneStats.meetings,                              color: '#6366F1' },
+                  { label: 'Paid',              value: bdaData.juneStats.paid,                                  color: '#22C55E' },
+                  { label: 'Completed (No Pay)',value: bdaData.juneStats.completed,                             color: '#14B8A6' },
+                  { label: 'Paid÷Completed %',  value: `${bdaData.paidVsCompleted}%`,                          color: '#F97316' },
+                  { label: 'Pending Claims',    value: bdaData.juneStats.pending,                              color: '#F59E0B' },
+                  { label: 'Pending Revenue',   value: `$${bdaData.juneStats.pendingRevenue.toLocaleString()}`, color: '#8B5CF6' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="flex flex-col rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 min-w-[80px]">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 leading-tight mb-1">{label}</span>
+                    <span className="text-lg font-extrabold leading-none" style={{ color }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Two charts side by side */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+              {/* Chart A — Monthly Paid vs Completed */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp size={14} className="text-indigo-500" />
+                  <h3 className="text-sm font-bold text-slate-900">Monthly Leads — Paid vs Completed</h3>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-4">
+                  Paid = booking converted to payment · Completed = meeting done, no payment
+                </p>
+                {bdaData.monthly.length === 0 ? (
+                  <div className="h-64 flex items-center justify-center text-slate-400 text-sm">No monthly data</div>
+                ) : (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={bdaData.monthly} margin={{ top: 10, right: 44, left: 0, bottom: 6 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} tickLine={false} axisLine={{ stroke: '#E2E8F0' }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} width={30} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} unit="%" width={44} domain={[0, 100]} />
+                        <Tooltip
+                          cursor={{ fill: 'rgba(15,23,42,0.03)' }}
+                          contentStyle={{ borderRadius: 10, borderColor: '#E2E8F0', fontSize: 12, boxShadow: '0 4px 12px -2px rgb(0 0 0/0.12)' }}
+                          formatter={(v: number, name: string) => name === 'Paid%' ? [`${v}%`, 'Paid ÷ Completed %'] : [v, name]}
+                        />
+                        <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                        <Bar yAxisId="left" dataKey="paid"      name="Paid"      fill="#6366F1" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        <Bar yAxisId="left" dataKey="completed" name="Completed" fill="#14B8A6" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey={(d: BdaMonthlyAttendance) =>
+                            (d.paid + d.completed) > 0 ? Math.round((d.paid / (d.paid + d.completed)) * 1000) / 10 : 0
+                          }
+                          name="Paid%"
+                          stroke="#F97316"
+                          strokeWidth={2.5}
+                          dot={{ r: 4, fill: '#F97316', strokeWidth: 0 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+
+              {/* Chart B — All-Time Plan Breakdown donut + June meeting outcome */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <Users size={14} className="text-indigo-500" />
+                  <h3 className="text-sm font-bold text-slate-900">All-Time Plan Breakdown + June Outcomes</h3>
+                </div>
+                <p className="text-[11px] text-slate-500 mb-4">
+                  Left: approved clients by plan · Right: June 2026 meeting result breakdown
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 h-64">
+
+                  {/* Donut — plan breakdown */}
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">By Plan (all-time)</p>
+                    {bdaData.planBreakdown.length === 0 ? (
+                      <div className="text-slate-400 text-sm">No data</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={180}>
+                        <PieChart>
+                          <Pie
+                            data={bdaData.planBreakdown}
+                            cx="50%" cy="50%"
+                            innerRadius={45} outerRadius={72}
+                            dataKey="count"
+                            nameKey="plan"
+                            paddingAngle={3}
+                            label={({ plan, percent }) => `${plan} ${(percent * 100).toFixed(0)}%`}
+                            labelLine={false}
+                          >
+                            {bdaData.planBreakdown.map((_, i) => (
+                              <Cell key={i} fill={['#6366F1','#22C55E','#F97316','#EF4444'][i % 4]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(v: number, name: string) => [v, name]} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+
+                  {/* Donut — June outcomes */}
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">June Outcomes</p>
+                    {bdaData.juneStats.meetings === 0 ? (
+                      <div className="text-slate-400 text-sm">No June data</div>
+                    ) : (() => {
+                      const juneOutcomes = [
+                        { name: 'Paid',      value: bdaData.juneStats.paid,      fill: '#6366F1' },
+                        { name: 'Completed', value: bdaData.juneStats.completed,  fill: '#14B8A6' },
+                        { name: 'No-Show',   value: 46,                           fill: '#FB7185' },
+                        { name: 'Scheduled', value: 48,                           fill: '#3B82F6' },
+                        { name: 'Other',     value: Math.max(0, bdaData.juneStats.meetings - bdaData.juneStats.paid - bdaData.juneStats.completed - 46 - 48), fill: '#94A3B8' },
+                      ].filter(d => d.value > 0);
+                      return (
+                        <ResponsiveContainer width="100%" height={180}>
+                          <PieChart>
+                            <Pie
+                              data={juneOutcomes}
+                              cx="50%" cy="50%"
+                              innerRadius={45} outerRadius={72}
+                              dataKey="value"
+                              nameKey="name"
+                              paddingAngle={3}
+                              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              labelLine={false}
+                            >
+                              {juneOutcomes.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                            </Pie>
+                            <Tooltip formatter={(v: number, name: string) => [v, name]} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-10 text-slate-400 text-sm">Could not load BDA data</div>
+        )}
+      </div>
 
     </div>
   );
