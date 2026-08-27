@@ -51,7 +51,10 @@ const REGIONS: RegionConfig[] = [
   },
 ];
 
-const MAX_DISCOUNT = 100;
+const MAX_DISCOUNT_BY_PLAN: Record<Plan, number> = {
+  professional: 50,
+  executive: 100,
+};
 
 interface GeneratedLink {
   url: string;
@@ -71,6 +74,7 @@ export default function PaymentLinkGeneratorView() {
 
   const region = REGIONS.find((r) => r.id === selectedRegion)!;
   const plan = region.plans.find((p) => p.id === selectedPlan)!;
+  const maxDiscount = MAX_DISCOUNT_BY_PLAN[selectedPlan];
   const discount = parseFloat(discountInput) || 0;
   const finalPrice = plan.originalPrice - discount;
 
@@ -83,7 +87,7 @@ export default function PaymentLinkGeneratorView() {
   const validateDiscount = (): string | null => {
     if (discountInput === '') return 'Please enter a discount amount (0 for no discount).';
     if (discount < 0) return 'Discount cannot be negative.';
-    if (discount > MAX_DISCOUNT) return `Discount cannot exceed ${region.symbol}${MAX_DISCOUNT}.`;
+    if (discount > maxDiscount) return `Discount cannot exceed ${region.symbol}${maxDiscount} for the ${plan.name}.`;
     if (discount >= plan.originalPrice) return 'Discount exceeds original price.';
     // Prevent more than 2 decimal places
     if (!/^\d+(\.\d{0,2})?$/.test(discountInput)) return `Enter a valid ${region.symbol} amount.`;
@@ -223,21 +227,21 @@ export default function PaymentLinkGeneratorView() {
         {/* Discount Input */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">
-            Discount Amount <span className="text-gray-400 font-normal normal-case">(max {region.symbol}{MAX_DISCOUNT})</span>
+            Discount Amount <span className="text-gray-400 font-normal normal-case">(max {region.symbol}{maxDiscount})</span>
           </h2>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-lg">{region.symbol}</span>
             <input
               type="number"
               min="0"
-              max={Math.min(MAX_DISCOUNT, plan.originalPrice - 1)}
+              max={Math.min(maxDiscount, plan.originalPrice - 1)}
               step="1"
               placeholder="0"
               value={discountInput}
               onChange={(e) => {
                 // Strip negatives and limit to 2 decimals
                 const val = e.target.value;
-                if (val === '' || (/^\d+(\.\d{0,2})?$/.test(val) && parseFloat(val) <= MAX_DISCOUNT)) {
+                if (val === '' || (/^\d+(\.\d{0,2})?$/.test(val) && parseFloat(val) <= maxDiscount)) {
                   setDiscountInput(val);
                 }
               }}
