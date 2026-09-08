@@ -108,7 +108,16 @@ export default function ClaimLeadsView02() {
   // Admin filters
   const [bdaFilter, setBdaFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'denied'>('all');
-  const [bdas, setBdas] = useState<Array<{ email: string; name: string; count: number }>>([]);
+  const [bdas, setBdas] = useState<
+    Array<{
+      email: string;
+      name: string;
+      count: number;
+      approvedCount?: number;
+      earnedIncentiveInr?: number;
+      pendingIncentiveInr?: number;
+    }>
+  >([]);
 
   const flashSuccess = (msg: string) => {
     setSuccess(msg);
@@ -274,10 +283,25 @@ export default function ClaimLeadsView02() {
         headers: authHeaders,
         body: JSON.stringify({ status }),
       });
-      const body = await res.json();
-      if (!res.ok || !body.success) throw new Error(body.message || 'Failed to update status');
-      setClaims((prev) => prev.map((x) => (x._id === c._id ? body.data : x)));
-      flashSuccess(status === 'approved' ? 'Approved' : status === 'denied' ? 'Denied' : 'Reset to pending');
+      let body: { success?: boolean; message?: string; data?: Claim } = {};
+      try {
+        body = await res.json();
+      } catch {
+        /* non-JSON error body */
+      }
+      if (!res.ok || !body.success) {
+        throw new Error(
+          body.message ||
+            (res.status === 403
+              ? 'Not allowed — admin access required to approve or deny.'
+              : `Failed to update status (HTTP ${res.status})`)
+        );
+      }
+      setClaims((prev) => prev.map((x) => (x._id === c._id ? (body.data as Claim) : x)));
+      flashSuccess(
+        status === 'approved' ? 'Approved' : status === 'denied' ? 'Denied' : 'Reset to pending'
+      );
+      loadBdas(); // refresh the per-BDA earned-incentive totals
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to update status');
     } finally {
@@ -382,6 +406,37 @@ export default function ClaimLeadsView02() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Per-BDA earned-incentive summary */}
+      {isAdmin && bdas.length > 0 && (
+        <div className="mb-4 flex flex-wrap gap-3">
+          {bdas.map((b) => (
+            <button
+              key={b.email}
+              onClick={() => setBdaFilter((cur) => (cur === b.email ? 'all' : b.email))}
+              className={`rounded-lg border px-3 py-2 text-left transition ${
+                bdaFilter === b.email
+                  ? 'border-purple-500 bg-purple-50'
+                  : 'border-gray-200 bg-white hover:border-purple-300'
+              }`}
+            >
+              <div className="text-sm font-semibold text-gray-900">{b.name || b.email}</div>
+              <div className="text-xs text-gray-500">
+                {b.count} claimed · {b.approvedCount ?? 0} approved
+              </div>
+              <div className="mt-0.5 text-sm">
+                <span className="font-bold text-green-700">{inr(b.earnedIncentiveInr ?? 0)}</span>
+                <span className="text-gray-400"> earned</span>
+                {(b.pendingIncentiveInr ?? 0) > 0 && (
+                  <span className="ml-2 text-amber-600">
+                    +{inr(b.pendingIncentiveInr ?? 0)} pending
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
         </div>
       )}
 
@@ -589,34 +644,48 @@ export default function ClaimLeadsView02() {
                       )}
                     </td>
 
-                    {/* Admin approve */}
+                    {/* Admin approve / deny */}
                     {isAdmin && (
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
                           <button
-                            title="Approve"
+                            title={c.status === 'approved' ? 'Approved' : 'Approve'}
                             onClick={() => approve(c, 'approved')}
                             disabled={savingRow === c._id || c.status === 'approved'}
                             className={`rounded p-1.5 ${
                               c.status === 'approved'
-                                ? 'bg-green-100 text-green-600 cursor-default'
-                                : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-600'
+                                ? 'bg-green-600 text-white cursor-default'
+                                : 'bg-gray-100 text-gray-500 hover:bg-green-100 hover:text-green-600 disabled:opacity-50'
                             }`}
                           >
-                            <Check size={14} />
+                            {savingRow === c._id ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Check size={14} />
+                            )}
                           </button>
                           <button
-                            title="Deny"
+                            title={c.status === 'denied' ? 'Denied' : 'Deny'}
                             onClick={() => approve(c, 'denied')}
                             disabled={savingRow === c._id || c.status === 'denied'}
                             className={`rounded p-1.5 ${
                               c.status === 'denied'
-                                ? 'bg-red-100 text-red-600 cursor-default'
-                                : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600'
+                                ? 'bg-red-600 text-white cursor-default'
+                                : 'bg-gray-100 text-gray-500 hover:bg-red-100 hover:text-red-600 disabled:opacity-50'
                             }`}
                           >
                             <X size={14} />
                           </button>
+                          {c.status !== 'pending' && (
+                            <button
+                              title="Reset to pending"
+                              onClick={() => approve(c, 'pending')}
+                              disabled={savingRow === c._id}
+                              className="rounded px-1.5 py-1 text-[10px] font-semibold text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                            >
+                              Reset
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}
