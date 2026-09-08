@@ -40,6 +40,7 @@ const Workflows = React.lazy(() => import('../components/Workflows'));
 const LeadsView = React.lazy(() => import('../components/LeadsView'));
 const QualifiedLeadsView = React.lazy(() => import('../components/QualifiedLeadsView'));
 const ClaimLeadsView = React.lazy(() => import('../components/ClaimLeadsView'));
+const ClaimLeadsView02 = React.lazy(() => import('../components/ClaimLeadsView02'));
 const MeetingInfoView = React.lazy(() => import('../components/MeetingInfoView'));
 const MetaLeadsView = React.lazy(() => import('../components/MetaLeadsView'));
 const ActivityLogView = React.lazy(() => import('../components/ActivityLogView'));
@@ -64,7 +65,7 @@ function TabSpinner() {
 }
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links';
+type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'claim_leads_02' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -82,6 +83,7 @@ const TAB_CONFIG: Array<{
   { tab: 'qualified_leads', permission: 'leads', label: 'Qualified Leads', icon: Filter },
   { tab: 'meta_leads', permission: 'meta_leads', label: 'Meta Leads', icon: Facebook },
   { tab: 'claim_leads', permission: 'claim_leads', label: 'Claim Your Leads', icon: UserCheck },
+  { tab: 'claim_leads_02', permission: 'claim_leads', label: 'Claim Leads 02', icon: UserCheck },
   { tab: 'meeting_links', permission: 'meeting_links', label: 'Meeting Info', icon: Video },
   { tab: 'activity', permission: 'activity_logs', label: 'Activity Log', icon: Activity },
   { tab: 'graphs', permission: 'lead_analytics', label: 'Graphs', icon: BarChart3 },
@@ -489,6 +491,7 @@ export default function CrmDashboardPage() {
                   />
                 )}
                 {activeTab === 'claim_leads' && <ClaimLeadsView />}
+                {activeTab === 'claim_leads_02' && <ClaimLeadsView02 />}
                 {activeTab === 'meeting_links' && <MeetingInfoView />}
                 {activeTab === 'activity' && <ActivityLogView />}
                 {activeTab === 'graphs' && <GraphsView />}
