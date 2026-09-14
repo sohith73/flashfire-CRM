@@ -486,7 +486,7 @@ export default function ClaimLeadsView02() {
               {isAdmin && (
                 <>
                   <th className="px-3 py-2 text-left font-semibold">Registered Currency</th>
-                  <th className="px-3 py-2 text-left font-semibold">Registered Amount Paid</th>
+                  <th className="px-3 py-2 text-left font-semibold">Payment Received (Stripe)</th>
                 </>
               )}
               <th className="px-3 py-2 text-left font-semibold">
