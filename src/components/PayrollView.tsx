@@ -23,6 +23,7 @@ interface PayrollRecord {
   incentive?: number | null;
   deduction?: number | null;
   isPaid?: boolean;
+  leaves?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,15 +112,24 @@ function computeDailyRate(monthly: number): number {
   return monthly / 30;
 }
 
+const PAID_LEAVE_ALLOWANCE = 2;
+
+function computeLeaveDeduction(monthly: number, leaves: number): number {
+  const extra = Math.max(0, leaves - PAID_LEAVE_ALLOWANCE);
+  return extra * computeDailyRate(monthly);
+}
+
 function computeFinalSalary(
   monthly: number,
   start: string,
   end: string,
   incentive?: number | null,
-  deduction?: number | null
+  deduction?: number | null,
+  leaves?: number,
 ): number {
   const days = diffDays(start, end);
-  return computeDailyRate(monthly) * days + (incentive || 0) - (deduction || 0);
+  const leaveDeduction = computeLeaveDeduction(monthly, leaves || 0);
+  return computeDailyRate(monthly) * days + (incentive || 0) - (deduction || 0) - leaveDeduction;
 }
 
 function fmtINR(value: number): string {
@@ -139,6 +149,7 @@ interface FormState {
   monthlySalary: string;
   incentive: string;
   deduction: string;
+  leaves: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -149,6 +160,7 @@ const EMPTY_FORM: FormState = {
   monthlySalary: '',
   incentive: '',
   deduction: '',
+  leaves: '',
 };
 
 function recordToForm(r: PayrollRecord): FormState {
@@ -160,6 +172,7 @@ function recordToForm(r: PayrollRecord): FormState {
     monthlySalary: r.monthlySalary ? String(r.monthlySalary) : '',
     incentive: r.incentive != null ? String(r.incentive) : '',
     deduction: r.deduction != null ? String(r.deduction) : '',
+    leaves: r.leaves ? String(r.leaves) : '',
   };
 }
 
@@ -659,6 +672,7 @@ export default function PayrollView() {
         ? (edits.incentive !== undefined ? (parseFloat(edits.incentive) || null) : record.incentive)
         : null,
       deduction: edits.deduction !== undefined ? (parseFloat(edits.deduction) || null) : record.deduction,
+      leaves: edits.leaves !== undefined ? (parseInt(edits.leaves) || 0) : (record.leaves || 0),
     };
 
     setSavingRows((prev) => new Set(prev).add(record._id));
@@ -900,6 +914,7 @@ export default function PayrollView() {
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Days Worked</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Incentive</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Deduction</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Leaves</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Final Salary</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Status</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Actions</th>
@@ -923,12 +938,15 @@ export default function PayrollView() {
                     ? edits.incentive
                     : (record.incentive != null ? String(record.incentive) : (bdaEarned != null ? String(bdaEarned) : ''));
                   const deductionStr = edits.deduction !== undefined ? edits.deduction : (record.deduction != null ? String(record.deduction) : '');
+                  const leavesStr = edits.leaves !== undefined ? edits.leaves : (record.leaves ? String(record.leaves) : '');
                   const incentiveVal = hasIncentive ? (parseFloat(incentiveStr) || 0) : 0;
                   const deductionVal = parseFloat(deductionStr) || 0;
+                  const leavesVal = parseInt(leavesStr) || 0;
                   const rate = monthlySalary > 0 ? computeDailyRate(monthlySalary) : 0;
                   const days = diffDays(startDate, endDate);
+                  const leaveDeduction = monthlySalary > 0 ? computeLeaveDeduction(monthlySalary, leavesVal) : 0;
                   const total = monthlySalary > 0
-                    ? computeFinalSalary(monthlySalary, startDate, endDate, hasIncentive ? incentiveVal : null, deductionVal || null)
+                    ? computeFinalSalary(monthlySalary, startDate, endDate, hasIncentive ? incentiveVal : null, deductionVal || null, leavesVal)
                     : 0;
 
                   const inputCls = 'w-full border border-gray-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-400 bg-white';
@@ -1029,6 +1047,23 @@ export default function PayrollView() {
                           placeholder="0"
                           className={inputCls + ' text-right min-w-[90px]'}
                         />
+                      </td>
+                      {/* Leaves */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <div className="flex flex-col gap-0.5 items-center">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={leavesStr}
+                            onChange={(e) => setInlineVal(record._id, 'leaves', e.target.value)}
+                            placeholder="0"
+                            className={inputCls + ' text-center min-w-[60px] max-w-[70px]'}
+                          />
+                          {leavesVal > PAID_LEAVE_ALLOWANCE && monthlySalary > 0 && (
+                            <span className="text-[10px] text-red-500 text-center">-₹{fmtINR(leaveDeduction)}</span>
+                          )}
+                        </div>
                       </td>
                       {/* Final Salary — computed, read-only */}
                       <td className="px-4 py-2 text-right whitespace-nowrap">
