@@ -22,6 +22,7 @@ interface PayrollRecord {
   monthlySalary: number;
   incentive?: number | null;
   deduction?: number | null;
+  isPaid?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +126,6 @@ function fmtINR(value: number): string {
   return value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function fmtDate(dateStr: string): string {
-  if (!dateStr) return '—';
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-IN');
-}
 
 // ---------------------------------------------------------------------------
 // Modal form state
@@ -612,6 +609,24 @@ export default function PayrollView() {
     }));
   }
 
+  async function handleTogglePaid(record: PayrollRecord) {
+    setSavingRows((prev) => new Set(prev).add(record._id));
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/${record._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ isPaid: !record.isPaid }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Failed to update');
+      await fetchRecords();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update');
+    } finally {
+      setSavingRows((prev) => { const n = new Set(prev); n.delete(record._id); return n; });
+    }
+  }
+
   async function handleInlineSave(record: PayrollRecord) {
     const edits = inlineEdits[record._id] || {};
     const teamName = edits.teamName ?? record.teamName;
@@ -868,6 +883,7 @@ export default function PayrollView() {
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Incentive</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Deduction</th>
                   <th className="text-right px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Final Salary</th>
+                  <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Status</th>
                   <th className="text-center px-4 py-3 font-semibold text-gray-600 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
@@ -992,6 +1008,21 @@ export default function PayrollView() {
                         {monthlySalary > 0
                           ? <span className="font-bold text-green-600 text-sm">₹{fmtINR(total)}</span>
                           : <span className="text-gray-300 text-sm">—</span>}
+                      </td>
+                      {/* Status */}
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePaid(record)}
+                          disabled={isSaving}
+                          className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                            record.isPaid
+                              ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                              : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
+                          }`}
+                        >
+                          {record.isPaid ? 'Paid' : 'Unpaid'}
+                        </button>
                       </td>
                       {/* Actions */}
                       <td className="px-2 py-2 text-center whitespace-nowrap">
