@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
+import { Plus, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 
 // ---------------------------------------------------------------------------
@@ -524,6 +524,8 @@ export default function PayrollView() {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
+  const [inlineEdits, setInlineEdits] = useState<Record<string, Partial<FormState>>>({});
+  const [savingRows, setSavingRows] = useState<Set<string>>(new Set());
 
   // -------------------------------------------------------------------------
   // Fetch records for active month
@@ -564,7 +566,6 @@ export default function PayrollView() {
   // -------------------------------------------------------------------------
 
   function openAdd() { setEditRecord(null); setModalOpen(true); }
-  function openEdit(record: PayrollRecord) { setEditRecord(record); setModalOpen(true); }
 
   async function handleSaved(newCustomTeams: string[]) {
     setCustomTeams(newCustomTeams);
@@ -586,6 +587,62 @@ export default function PayrollView() {
       await fetchRecords();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete record');
+    }
+  }
+
+  function getInlineVal(id: string, field: keyof FormState, record: PayrollRecord): string {
+    const edits = inlineEdits[id];
+    if (edits && field in edits) return edits[field] as string;
+    const map: Record<keyof FormState, string> = {
+      employeeName: record.employeeName,
+      teamName: record.teamName,
+      startDate: record.startDate || '',
+      endDate: record.endDate || '',
+      monthlySalary: record.monthlySalary ? String(record.monthlySalary) : '',
+      incentive: record.incentive != null ? String(record.incentive) : '',
+      deduction: record.deduction != null ? String(record.deduction) : '',
+    };
+    return map[field];
+  }
+
+  function setInlineVal(id: string, field: keyof FormState, value: string) {
+    setInlineEdits((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || {}), [field]: value },
+    }));
+  }
+
+  async function handleInlineSave(record: PayrollRecord) {
+    const edits = inlineEdits[record._id] || {};
+    const teamName = edits.teamName ?? record.teamName;
+    const showIncentive = INCENTIVE_TEAMS.has(teamName);
+    const payload: Record<string, unknown> = {
+      employeeName: (edits.employeeName ?? record.employeeName).trim(),
+      teamName,
+      startDate: edits.startDate ?? record.startDate ?? '',
+      endDate: edits.endDate ?? record.endDate ?? '',
+      monthlySalary: edits.monthlySalary !== undefined ? (parseFloat(edits.monthlySalary) || 0) : record.monthlySalary,
+      incentive: showIncentive
+        ? (edits.incentive !== undefined ? (parseFloat(edits.incentive) || null) : record.incentive)
+        : null,
+      deduction: edits.deduction !== undefined ? (parseFloat(edits.deduction) || null) : record.deduction,
+    };
+
+    setSavingRows((prev) => new Set(prev).add(record._id));
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/${record._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.success) throw new Error(body.error || 'Failed to save');
+      setInlineEdits((prev) => { const n = { ...prev }; delete n[record._id]; return n; });
+      await fetchRecords();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSavingRows((prev) => { const n = new Set(prev); n.delete(record._id); return n; });
     }
   }
 
@@ -816,74 +873,143 @@ export default function PayrollView() {
               </thead>
               <tbody>
                 {filteredRecords.map((record, idx) => {
-                  const hasSalary = record.monthlySalary > 0;
-                  const rate = hasSalary ? computeDailyRate(record.monthlySalary) : 0;
-                  const days = diffDays(record.startDate, record.endDate);
-                  const hasBothDates = !!record.startDate && !!record.endDate;
-                  const hasIncentive = INCENTIVE_TEAMS.has(record.teamName);
-                  const total = hasSalary
-                    ? computeFinalSalary(
-                        record.monthlySalary, record.startDate, record.endDate,
-                        hasIncentive ? record.incentive : null, record.deduction
-                      )
+                  const edits = inlineEdits[record._id] || {};
+                  const isSaving = savingRows.has(record._id);
+                  const isDirty = Object.keys(edits).length > 0;
+
+                  const teamName = edits.teamName ?? record.teamName;
+                  const startDate = edits.startDate ?? record.startDate ?? '';
+                  const endDate = edits.endDate ?? record.endDate ?? '';
+                  const monthlySalaryStr = edits.monthlySalary !== undefined ? edits.monthlySalary : (record.monthlySalary ? String(record.monthlySalary) : '');
+                  const monthlySalary = parseFloat(monthlySalaryStr) || 0;
+                  const hasIncentive = INCENTIVE_TEAMS.has(teamName);
+                  const incentiveStr = edits.incentive !== undefined ? edits.incentive : (record.incentive != null ? String(record.incentive) : '');
+                  const deductionStr = edits.deduction !== undefined ? edits.deduction : (record.deduction != null ? String(record.deduction) : '');
+                  const incentiveVal = hasIncentive ? (parseFloat(incentiveStr) || 0) : 0;
+                  const deductionVal = parseFloat(deductionStr) || 0;
+                  const rate = monthlySalary > 0 ? computeDailyRate(monthlySalary) : 0;
+                  const days = diffDays(startDate, endDate);
+                  const total = monthlySalary > 0
+                    ? computeFinalSalary(monthlySalary, startDate, endDate, hasIncentive ? incentiveVal : null, deductionVal || null)
                     : 0;
-                  const hasDeduction = (record.deduction ?? 0) > 0;
-                  const hasIncentiveValue = hasIncentive && (record.incentive ?? 0) > 0;
+
+                  const inputCls = 'w-full border border-gray-200 rounded-lg px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-blue-400 bg-white';
 
                   return (
                     <tr
                       key={record._id}
-                      className={`border-b border-gray-50 last:border-b-0 hover:bg-slate-50/60 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/30' : ''}`}
+                      className={`border-b border-gray-50 last:border-b-0 transition-colors ${isDirty ? 'bg-blue-50/40' : idx % 2 === 1 ? 'bg-slate-50/30' : 'hover:bg-slate-50/60'}`}
                     >
-                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{record.employeeName}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                          {record.teamName}
-                        </span>
+                      {/* Employee Name */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <input
+                          type="text"
+                          value={getInlineVal(record._id, 'employeeName', record)}
+                          onChange={(e) => setInlineVal(record._id, 'employeeName', e.target.value)}
+                          className={inputCls + ' font-medium min-w-[120px]'}
+                        />
                       </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {record.startDate ? fmtDate(record.startDate) : '—'}
+                      {/* Team */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <select
+                          value={teamName}
+                          onChange={(e) => setInlineVal(record._id, 'teamName', e.target.value)}
+                          className={inputCls + ' min-w-[120px]'}
+                        >
+                          {allTeams(customTeams).map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
                       </td>
-                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                        {record.endDate ? fmtDate(record.endDate) : '—'}
+                      {/* Start Date */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setInlineVal(record._id, 'startDate', e.target.value)}
+                          className={inputCls + ' min-w-[130px]'}
+                        />
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
-                        {hasSalary ? `₹${fmtINR(record.monthlySalary)}` : '—'}
+                      {/* End Date */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setInlineVal(record._id, 'endDate', e.target.value)}
+                          className={inputCls + ' min-w-[130px]'}
+                        />
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-400 whitespace-nowrap">
-                        {hasSalary ? `₹${fmtINR(rate)}` : '—'}
+                      {/* Monthly Salary */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={monthlySalaryStr}
+                          onChange={(e) => setInlineVal(record._id, 'monthlySalary', e.target.value)}
+                          placeholder="0"
+                          className={inputCls + ' text-right min-w-[100px]'}
+                        />
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-400 whitespace-nowrap">
-                        {hasBothDates ? days : '—'}
+                      {/* Daily Rate — computed, read-only */}
+                      <td className="px-4 py-2 text-right text-gray-400 whitespace-nowrap text-sm">
+                        {monthlySalary > 0 ? `₹${fmtINR(rate)}` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {hasIncentiveValue
-                          ? <span className="text-orange-500 font-medium">₹{fmtINR(record.incentive!)}</span>
-                          : <span className="text-gray-300">—</span>}
+                      {/* Days Worked — computed, read-only */}
+                      <td className="px-4 py-2 text-right text-gray-400 whitespace-nowrap text-sm">
+                        {startDate && endDate ? days : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {hasDeduction
-                          ? <span className="text-red-500">₹{fmtINR(record.deduction!)}</span>
-                          : <span className="text-gray-300">—</span>}
+                      {/* Incentive */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        {hasIncentive ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={incentiveStr}
+                            onChange={(e) => setInlineVal(record._id, 'incentive', e.target.value)}
+                            placeholder="0"
+                            className={inputCls + ' text-right min-w-[90px]'}
+                          />
+                        ) : (
+                          <span className="text-gray-300 text-sm px-2">—</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {hasSalary
-                          ? <span className="font-bold text-green-600">₹{fmtINR(total)}</span>
-                          : <span className="text-gray-300">—</span>}
+                      {/* Deduction */}
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={deductionStr}
+                          onChange={(e) => setInlineVal(record._id, 'deduction', e.target.value)}
+                          placeholder="0"
+                          className={inputCls + ' text-right min-w-[90px]'}
+                        />
                       </td>
-                      <td className="px-4 py-3 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-2">
+                      {/* Final Salary — computed, read-only */}
+                      <td className="px-4 py-2 text-right whitespace-nowrap">
+                        {monthlySalary > 0
+                          ? <span className="font-bold text-green-600 text-sm">₹{fmtINR(total)}</span>
+                          : <span className="text-gray-300 text-sm">—</span>}
+                      </td>
+                      {/* Actions */}
+                      <td className="px-2 py-2 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => openEdit(record)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
-                            title="Edit"
+                            onClick={() => handleInlineSave(record)}
+                            disabled={isSaving || !isDirty}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${isDirty ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-100 text-gray-300 cursor-not-allowed'}`}
+                            title="Save"
                           >
-                            <Pencil size={14} />
+                            {isSaving ? <Loader2 size={11} className="animate-spin" /> : null}
+                            Save
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDelete(record._id)}
+                            disabled={isSaving}
                             className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                             title="Delete"
                           >
