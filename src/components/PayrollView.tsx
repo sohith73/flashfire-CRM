@@ -629,6 +629,7 @@ export default function PayrollView() {
       monthlySalary: record.monthlySalary ? String(record.monthlySalary) : '',
       incentive: record.incentive != null ? String(record.incentive) : '',
       deduction: record.deduction != null ? String(record.deduction) : '',
+      leaves: record.leaves ? String(record.leaves) : '',
     };
     return map[field];
   }
