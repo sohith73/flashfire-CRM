@@ -17,6 +17,7 @@ export const CRM_MODULES = [
   'graphs03',
   'phone_calls',
   'payment_links',
+  'payroll',
 ] as const;
 
 export type CrmModule = (typeof CRM_MODULES)[number];
