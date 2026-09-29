@@ -23,6 +23,7 @@ import {
   FileText,
   CreditCard,
   ShieldCheck,
+  DollarSign,
 } from 'lucide-react';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
@@ -53,6 +54,7 @@ const CallLeadsView = React.lazy(() => import('../components/CallLeadsView'));
 const EmailTemplateBuilder = React.lazy(() => import('../components/EmailTemplateBuilder'));
 const SessionsView = React.lazy(() => import('../components/SessionsView'));
 const PaymentLinkGeneratorView = React.lazy(() => import('../components/PaymentLinkGeneratorView'));
+const PayrollView = React.lazy(() => import('../components/PayrollView'));
 
 function TabSpinner() {
   return (
@@ -65,7 +67,7 @@ function TabSpinner() {
 }
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'claim_leads_02' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links';
+type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'claim_leads_02' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links' | 'payroll';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -94,6 +96,7 @@ const TAB_CONFIG: Array<{
   { tab: 'call_leads', permission: 'call_leads', label: 'Call Leads', icon: PhoneCall },
   { tab: 'email_templates', permission: 'email_campaign', label: 'Email Templates', icon: FileText },
   { tab: 'payment_links', permission: 'payment_links', label: 'Payment Link Generator', icon: CreditCard },
+  { tab: 'payroll', permission: 'payroll', label: 'Payroll', icon: DollarSign },
 ];
 
 export default function CrmDashboardPage() {
@@ -502,6 +505,7 @@ export default function CrmDashboardPage() {
                 {activeTab === 'call_leads' && <CallLeadsView />}
                 {activeTab === 'email_templates' && <EmailTemplateBuilder />}
                 {activeTab === 'payment_links' && <PaymentLinkGeneratorView />}
+                {activeTab === 'payroll' && <PayrollView />}
               </Suspense>
             )}
           </div>

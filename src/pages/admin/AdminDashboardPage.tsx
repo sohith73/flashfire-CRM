@@ -23,7 +23,8 @@ type CrmModule =
   | 'lead_analytics'
   | 'graphs03'
   | 'phone_calls'
-  | 'payment_links';
+  | 'payment_links'
+  | 'payroll';
 
 type CrmPermission = CrmModule | `${CrmModule}_edit`;
 
@@ -46,6 +47,7 @@ const PERMISSIONS: Array<{ key: CrmModule; label: string; description: string; v
   { key: 'graphs03', label: 'Graphs 03', description: 'BDA performance — completed meetings, calls made, no-show follow-up' },
   { key: 'phone_calls', label: 'Phone Calls', description: 'Access Zoom Phone call recordings and per-lead call history' },
   { key: 'payment_links', label: 'Payment Link Generator', description: 'Generate discounted Stripe Checkout links for clients (BDA internal tool)' },
+  { key: 'payroll', label: 'Payroll Management', description: 'Employee payroll, salary calculation, incentives and deductions' },
 ];
 
 type CrmUserRow = {
