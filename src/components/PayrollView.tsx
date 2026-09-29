@@ -523,6 +523,7 @@ export default function PayrollView() {
   const [teamFilter, setTeamFilter] = useState('');
   const [inlineEdits, setInlineEdits] = useState<Record<string, Partial<FormState>>>({});
   const [savingRows, setSavingRows] = useState<Set<string>>(new Set());
+  const [bdaIncentives, setBdaIncentives] = useState<Record<string, number>>({});
 
   // -------------------------------------------------------------------------
   // Fetch records for active month
@@ -551,6 +552,23 @@ export default function PayrollView() {
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords]);
+
+  // Fetch BDA earned incentives from Claim Leads 02
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/api/bda/claim02/bdas`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((body) => {
+        if (!body.success) return;
+        const map: Record<string, number> = {};
+        for (const bda of body.data) {
+          // key by lowercase name for fuzzy match
+          map[bda.name.trim().toLowerCase()] = Math.round(bda.earnedIncentiveInr || 0);
+        }
+        setBdaIncentives(map);
+      })
+      .catch(() => {/* non-critical */});
+  }, [token]);
 
   // -------------------------------------------------------------------------
   // Derived
@@ -899,7 +917,11 @@ export default function PayrollView() {
                   const monthlySalaryStr = edits.monthlySalary !== undefined ? edits.monthlySalary : (record.monthlySalary ? String(record.monthlySalary) : '');
                   const monthlySalary = parseFloat(monthlySalaryStr) || 0;
                   const hasIncentive = INCENTIVE_TEAMS.has(teamName);
-                  const incentiveStr = edits.incentive !== undefined ? edits.incentive : (record.incentive != null ? String(record.incentive) : '');
+                  // Auto-fill from Claim Leads 02 earned incentive if no manual value set
+                  const bdaEarned = hasIncentive ? (bdaIncentives[record.employeeName.trim().toLowerCase()] ?? null) : null;
+                  const incentiveStr = edits.incentive !== undefined
+                    ? edits.incentive
+                    : (record.incentive != null ? String(record.incentive) : (bdaEarned != null ? String(bdaEarned) : ''));
                   const deductionStr = edits.deduction !== undefined ? edits.deduction : (record.deduction != null ? String(record.deduction) : '');
                   const incentiveVal = hasIncentive ? (parseFloat(incentiveStr) || 0) : 0;
                   const deductionVal = parseFloat(deductionStr) || 0;
@@ -978,15 +1000,20 @@ export default function PayrollView() {
                       {/* Incentive */}
                       <td className="px-2 py-2 whitespace-nowrap">
                         {hasIncentive ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            value={incentiveStr}
-                            onChange={(e) => setInlineVal(record._id, 'incentive', e.target.value)}
-                            placeholder="0"
-                            className={inputCls + ' text-right min-w-[90px]'}
-                          />
+                          <div className="flex flex-col gap-0.5">
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={incentiveStr}
+                              onChange={(e) => setInlineVal(record._id, 'incentive', e.target.value)}
+                              placeholder="0"
+                              className={inputCls + ' text-right min-w-[90px]'}
+                            />
+                            {bdaEarned != null && record.incentive == null && edits.incentive === undefined && (
+                              <span className="text-[10px] text-blue-500 text-right pr-1">from CL02</span>
+                            )}
+                          </div>
                         ) : (
                           <span className="text-gray-300 text-sm px-2">—</span>
                         )}
