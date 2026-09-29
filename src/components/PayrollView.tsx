@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Pencil, Trash2, X, ChevronDown, ChevronLeft, ChevronRight, Loader2, Search } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 
 // ---------------------------------------------------------------------------
@@ -522,6 +522,8 @@ export default function PayrollView() {
   const [editRecord, setEditRecord] = useState<PayrollRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [teamFilter, setTeamFilter] = useState('');
 
   // -------------------------------------------------------------------------
   // Fetch records for active month
@@ -590,6 +592,20 @@ export default function PayrollView() {
   // -------------------------------------------------------------------------
   // Summary
   // -------------------------------------------------------------------------
+
+  const filteredRecords = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return records.filter((r) => {
+      const matchesSearch = !q || r.employeeName.toLowerCase().includes(q) || r.teamName.toLowerCase().includes(q);
+      const matchesTeam = !teamFilter || r.teamName === teamFilter;
+      return matchesSearch && matchesTeam;
+    });
+  }, [records, searchQuery, teamFilter]);
+
+  const teamOptions = useMemo(() => {
+    const teams = Array.from(new Set(records.map((r) => r.teamName))).sort();
+    return teams;
+  }, [records]);
 
   const totalPayroll = records.reduce((sum, r) => {
     const hasInc = INCENTIVE_TEAMS.has(r.teamName);
@@ -689,6 +705,49 @@ export default function PayrollView() {
         )}
       </div>
 
+      {/* Search + Filter bar */}
+      {!loading && !fetchError && records.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or team…"
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            />
+          </div>
+          <div className="relative">
+            <select
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+              className="appearance-none border border-gray-200 rounded-xl px-3 py-2 pr-8 text-sm text-gray-700 bg-white outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="">All Teams</option>
+              {teamOptions.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          </div>
+          {(searchQuery || teamFilter) && (
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); setTeamFilter(''); }}
+              className="text-xs font-semibold text-gray-400 hover:text-gray-600 underline underline-offset-2"
+            >
+              Clear filters
+            </button>
+          )}
+          {(searchQuery || teamFilter) && (
+            <span className="ml-auto text-xs text-gray-400 font-medium">
+              {filteredRecords.length} of {records.length} employees
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Table card */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         {loading ? (
@@ -726,6 +785,17 @@ export default function PayrollView() {
               Add Employee
             </button>
           </div>
+        ) : filteredRecords.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center px-4">
+            <p className="text-gray-500 font-semibold">No employees match your search.</p>
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(''); setTeamFilter(''); }}
+              className="mt-3 text-sm text-blue-500 hover:text-blue-700 underline underline-offset-2"
+            >
+              Clear filters
+            </button>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -745,7 +815,7 @@ export default function PayrollView() {
                 </tr>
               </thead>
               <tbody>
-                {records.map((record, idx) => {
+                {filteredRecords.map((record, idx) => {
                   const hasSalary = record.monthlySalary > 0;
                   const rate = hasSalary ? computeDailyRate(record.monthlySalary) : 0;
                   const days = diffDays(record.startDate, record.endDate);
