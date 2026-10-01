@@ -818,7 +818,7 @@ export default function BdaAnalysisPage() {
                       const planOrder = ['PRIME', 'IGNITE', 'PROFESSIONAL', 'EXECUTIVE'];
                       return planOrder.indexOf(a.planName) - planOrder.indexOf(b.planName);
                     }
-                    const currencyOrder = ['USD', 'CAD', 'INR', 'EUR', 'GBP'];
+                    const currencyOrder = ['USD', 'CAD', 'INR', 'EUR', 'GBP', 'AUD'];
                     return currencyOrder.indexOf(a.currency) - currencyOrder.indexOf(b.currency);
                   })
                   .map((cfg, index) => (
@@ -846,6 +846,7 @@ export default function BdaAnalysisPage() {
                         <option value="INR">INR</option>
                         <option value="EUR">EUR</option>
                         <option value="GBP">GBP</option>
+                        <option value="AUD">AUD</option>
                       </select>
                     </td>
                     <td className="px-4 py-2">
