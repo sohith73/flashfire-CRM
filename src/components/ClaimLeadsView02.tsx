@@ -15,12 +15,13 @@ import { CURRENCY_SYMBOLS } from '../utils/currency';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
-// The four currencies a BDA may record for what they collected.
-const BDA_CURRENCY_OPTIONS: Array<{ code: 'GBP' | 'USD' | 'INR' | 'CAD'; label: string }> = [
+// The currencies a BDA may record for what they collected.
+const BDA_CURRENCY_OPTIONS: Array<{ code: 'GBP' | 'USD' | 'INR' | 'CAD' | 'AUD'; label: string }> = [
   { code: 'GBP', label: `${CURRENCY_SYMBOLS.GBP} British Pound` },
   { code: 'USD', label: `${CURRENCY_SYMBOLS.USD} USD` },
   { code: 'INR', label: `${CURRENCY_SYMBOLS.INR} Rupee` },
   { code: 'CAD', label: `${CURRENCY_SYMBOLS.CAD} CAD` },
+  { code: 'AUD', label: `${CURRENCY_SYMBOLS.AUD} AUD` },
 ];
 
 const sym = (code: string | null | undefined) =>
@@ -50,7 +51,7 @@ type Claim = {
   crmEmail: string;
   clientPhone?: string;
   registeredPlan: string;
-  bdaCurrency: 'GBP' | 'USD' | 'INR' | 'CAD' | null;
+  bdaCurrency: 'GBP' | 'USD' | 'INR' | 'CAD' | 'AUD' | null;
   bdaAmountCollected: number | null;
   incentiveInr: number;
   claimedBy: { email: string; name: string };
