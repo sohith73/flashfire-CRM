@@ -5,7 +5,7 @@ import { useCrmAuth } from '../auth/CrmAuthContext';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
 type Plan = 'professional' | 'executive';
-type Region = 'us' | 'uk' | 'ca';
+type Region = 'us' | 'uk' | 'ca' | 'au';
 
 interface PlanConfig {
   id: Plan;
@@ -47,6 +47,15 @@ const REGIONS: RegionConfig[] = [
     plans: [
       { id: 'professional', name: 'Professional Plan', description: 'Professional Plan – Mid-Level Professionals', originalPrice: 409 },
       { id: 'executive', name: 'Executive Plan', description: 'Executive Plan – 1200+ Applications', originalPrice: 799 },
+    ],
+  },
+  {
+    id: 'au',
+    label: 'Australia (AUD)',
+    symbol: 'A$',
+    plans: [
+      { id: 'professional', name: 'Professional Plan', description: 'Professional Plan – Mid-Level Professionals', originalPrice: 549 },
+      { id: 'executive', name: 'Executive Plan', description: 'Executive Plan – 1200+ Applications', originalPrice: 899 },
     ],
   },
 ];
@@ -156,7 +165,7 @@ export default function PaymentLinkGeneratorView() {
         {/* Region Selection */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Select Region</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {REGIONS.map((r) => {
               const isSelected = selectedRegion === r.id;
               return (
