@@ -239,6 +239,17 @@ export default function BdaAnalysisPage() {
         mappedConfigs.push(...gbpDefaults);
       }
 
+      // If no EUR configs exist, add default EUR configurations (no Prime plan in EUR)
+      const hasEurConfigs = mappedConfigs.some((c: { planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }) => c.currency === 'EUR');
+      if (!hasEurConfigs) {
+        const eurDefaults: Array<{ planName: PlanName; basePrice: number; currency: string; incentivePerLeadInr: number }> = [
+          { planName: 'IGNITE', basePrice: 169, currency: 'EUR', incentivePerLeadInr: 600 },
+          { planName: 'PROFESSIONAL', basePrice: 299, currency: 'EUR', incentivePerLeadInr: 1200 },
+          { planName: 'EXECUTIVE', basePrice: 499, currency: 'EUR', incentivePerLeadInr: 2200 },
+        ];
+        mappedConfigs.push(...eurDefaults);
+      }
+
       setCommissionConfigs(mappedConfigs);
     } catch (err) {
       setCommissionError(err instanceof Error ? err.message : 'Failed to load commission config');

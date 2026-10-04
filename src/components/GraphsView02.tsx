@@ -377,6 +377,15 @@ const StripeRevTip = ({ active, payload, label }: any) => {
             <span className="font-bold text-slate-900">${d.cad.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         )}
+        {d.eur > 0 && (
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#10B981' }} />
+              <span className="text-slate-600 font-medium">EUR</span>
+            </div>
+            <span className="font-bold text-slate-900">€{d.eur.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        )}
         <div className="border-t border-slate-100 pt-1 flex justify-between">
           <span className="text-slate-500 font-semibold">Payments</span>
           <span className="font-bold text-slate-900">{d.count}</span>
@@ -391,7 +400,7 @@ export default function GraphsView02() {
   const { token } = useCrmAuth();
   const [data,         setData]         = useState<AnalyticsPayload | null>(null);
   const [paidClients,  setPaidClients]  = useState<PaidClientsPayload | null>(null);
-  const [stripeData,   setStripeData]   = useState<{ month: string; usd: number; cad: number; count: number }[]>([]);
+  const [stripeData,   setStripeData]   = useState<{ month: string; usd: number; cad: number; eur?: number; count: number }[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [completedView, setCompletedView] = useState<'total' | 'average'>('total');
@@ -746,7 +755,7 @@ export default function GraphsView02() {
   }, [data, callsGranularity]);
 
   const stripeChartData = useMemo(() =>
-    stripeData.map((r: { month: string; usd: number; cad: number; count: number }) => ({ ...r, monthLabel: fmtMonth(r.month) }))
+    stripeData.map((r: { month: string; usd: number; cad: number; eur?: number; count: number }) => ({ ...r, monthLabel: fmtMonth(r.month) }))
   , [stripeData]);
 
   // ── Refresh button ─────────────────────────────────────────────
@@ -798,7 +807,7 @@ export default function GraphsView02() {
       {stripeChartData.length > 0 && (
         <Card
           title="Stripe Revenue — Month Wise"
-          subtitle="USD & CAD totals per month · all time"
+          subtitle="USD, CAD & EUR totals per month · all time"
           icon={TrendingUp}
           iconColor="text-indigo-500"
         >
@@ -811,6 +820,7 @@ export default function GraphsView02() {
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
               <Bar dataKey="usd" name="USD" fill="#6366F1" radius={[4,4,0,0]} />
               <Bar dataKey="cad" name="CAD" fill="#F97316" radius={[4,4,0,0]} />
+              <Bar dataKey="eur" name="EUR" fill="#10B981" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         </Card>

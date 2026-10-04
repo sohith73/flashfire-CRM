@@ -5,7 +5,7 @@ import { useCrmAuth } from '../auth/CrmAuthContext';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
 type Plan = 'professional' | 'executive';
-type Region = 'us' | 'uk' | 'ca' | 'au';
+type Region = 'us' | 'uk' | 'ca' | 'au' | 'eu';
 
 interface PlanConfig {
   id: Plan;
@@ -56,6 +56,15 @@ const REGIONS: RegionConfig[] = [
     plans: [
       { id: 'professional', name: 'Professional Plan', description: 'Professional Plan – Mid-Level Professionals', originalPrice: 549 },
       { id: 'executive', name: 'Executive Plan', description: 'Executive Plan – 1200+ Applications', originalPrice: 899 },
+    ],
+  },
+  {
+    id: 'eu',
+    label: 'Europe (EUR)',
+    symbol: '€',
+    plans: [
+      { id: 'professional', name: 'Professional Plan', description: 'Professional Plan – Mid-Level Professionals', originalPrice: 299 },
+      { id: 'executive', name: 'Executive Plan', description: 'Executive Plan – 1200+ Applications', originalPrice: 499 },
     ],
   },
 ];

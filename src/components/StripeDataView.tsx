@@ -391,8 +391,9 @@ export default function StripeDataView() {
       const rows = combinedRows.filter((r) => bucket.match(r.planName));
       const usd = rows.filter((r) => r.currency === 'USD').reduce((s, r) => s + r.amount, 0);
       const cad = rows.filter((r) => r.currency === 'CAD').reduce((s, r) => s + r.amount, 0);
+      const eur = rows.filter((r) => r.currency === 'EUR').reduce((s, r) => s + r.amount, 0);
       const inr = rows.filter((r) => r.currency === 'INR').reduce((s, r) => s + r.amount, 0);
-      return { ...bucket, count: rows.length, usd, cad, inr };
+      return { ...bucket, count: rows.length, usd, cad, eur, inr };
     }).filter((b) => b.count > 0);
   }, [combinedRows]);
 
@@ -583,6 +584,11 @@ export default function StripeDataView() {
                     {b.cad > 0 && (
                       <div className="text-sm font-bold text-slate-900">
                         ${b.cad.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-normal text-slate-400">CAD</span>
+                      </div>
+                    )}
+                    {b.eur > 0 && (
+                      <div className="text-sm font-bold text-slate-900">
+                        €{b.eur.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-xs font-normal text-slate-400">EUR</span>
                       </div>
                     )}
                     {b.inr > 0 && (
