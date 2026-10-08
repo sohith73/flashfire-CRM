@@ -14,9 +14,9 @@ import type {
   ReviewQueuesResponse,
 } from '../types/attendanceAdmin';
 
-// Admin endpoints need PUT, which the shared crmRequest helper in ./attendance does not offer.
-// This is the same request/error contract (ApiError, `{success:false, error:{code,message}}`),
-// kept local so the shared helper is not edited from a parallel change.
+// Admin endpoints need PUT (for profile edits, deduction actions), which the shared crmRequest in ./attendance
+// does not support. This function duplicates crmRequest locally with PUT support, keeping the same ApiError contract
+// so admin callers handle errors consistently. Kept local so the shared helper is not edited during parallel work.
 async function adminRequest<T>(
   path: string,
   token: string | null,
@@ -76,7 +76,9 @@ export const attendanceAdminKeys = {
 // Reads
 // ---------------------------------------------------------------------------
 
-/** Own rows for a BDA, every row for an admin (optionally one BDA). The server decides which. */
+/** Fetch deductions for a month. A BDA sees only their own rows; an admin sees all or filters by bdaEmail.
+ * The server checks permissions and returns only rows the user is allowed to see.
+ */
 export function useDeductions(token: string | null, month: string, bdaEmail: string) {
   return useQuery({
     queryKey: attendanceAdminKeys.deductions(month, bdaEmail),
@@ -153,9 +155,10 @@ export function useActivateDeduction(token: string | null) {
   });
 }
 
-/**
- * Waive an active row, or activate / waive a needs_review row. The server has two endpoints for
- * this (plan 8.3), so the row's status picks the right one and callers just pass the decision.
+/** Waive a deduction (approve the fine) or activate a needs_review deduction with a decision.
+ * The server has two separate endpoints (/waive and /activate) based on the row's status,
+ * so this helper picks the right one: waive for active rows, activate or waive for needs_review.
+ * Plan section 8.3.
  */
 export function useResolveDeduction(token: string | null) {
   const waive = useWaiveDeduction(token);
@@ -221,10 +224,9 @@ interface SaveProfileVars {
   update: BdaProfileUpdate;
 }
 
-/**
- * Saves a profile edit with the change shown at once. If the server refuses it, the cached
- * profile goes back to what it was. Saves run one after another (`scope`), so a fast second
- * click cannot overtake the first.
+/** Saves a BDA profile edit (name, aliases, leave days, etc) with optimistic updates.
+ * The change shows in the UI immediately; if the server refuses, the cached profile reverts.
+ * Uses `scope` so saves run sequentially: a fast second click cannot queue two saves that overtake each other.
  */
 export function useSaveBdaProfile(token: string | null) {
   const client = useQueryClient();

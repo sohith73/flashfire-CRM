@@ -1,6 +1,8 @@
-// Admin and ledger shapes for the Deductions tab, review queues and BDA registry.
-// Source of truth: DASH/BDA attendance/docs/api-contracts.md. Row-level types (Deduction,
-// DeductionRule, DeductionStatus) live in ./attendance.ts and are reused here, not redeclared.
+/** Admin-only types for the Deductions tab, review queues, and BDA registry management.
+ * Source of truth: DASH/BDA attendance/docs/api-contracts.md (plan sections 2-8).
+ * Row-level types (Deduction, DeductionRule, DeductionStatus) are reused from ./attendance.ts
+ * to keep the single source of truth for data shapes.
+ */
 import type { Deduction, DeductionRule, SignalKind } from './attendance';
 
 export type DeductionsMode = 'off' | 'shadow' | 'live';
@@ -84,20 +86,24 @@ export interface ReviewQueuesResponse {
   needsReassignment: NeedsReassignmentItem[];
 }
 
+/** Registry entry for one BDA: their identity (email, names, aliases) and tracking settings.
+ * Created by admins, used throughout the system to match BDAs across Google Meet, Zoom, Calendly, and the CRM.
+ * See plan section 2.8 for the identity matching rules and why every system names the same person differently.
+ */
 export interface BdaProfile {
-  email: string;
-  displayName: string;
-  firstName?: string;
-  lastName?: string;
-  aliases: string[];
-  calendlyUserUri?: string | null;
-  zoomUserId?: string | null;
-  googleUserId?: string | null;
-  discordUserId: string | null;
-  /** Approved leave dates, 'YYYY-MM-DD' in IST. */
+  email: string; // Unique identity key (lowercase), the canonical email address for this person
+  displayName: string; // "Siddhartha" or "Kalpataru", used in attendance rows and admin lists
+  firstName?: string; // "siddhartha", "kalpataru" (lowercase, used for name matching fallback)
+  lastName?: string; // "basaveni", "samal" (used for name matching fallback)
+  aliases: string[]; // Alternate names seen in the wild: ["siddhartha b", "basaveni siddhartha"]
+  calendlyUserUri?: string | null; // https://api.calendly.com/users/74015a2f-..., identifies them on Calendly
+  zoomUserId?: string | null; // Zoom Phone caller_user_id, identifies them on Zoom
+  googleUserId?: string | null; // Google Meet participant user ID, learned automatically from Meet records
+  discordUserId: string | null; // Discord @mention ID for admin alerts (set by admin)
+  /** Approved leave dates in 'YYYY-MM-DD' format (IST timezone). Meetings on these dates are not countable. */
   leaveDays: string[];
-  active: boolean;
-  tracked: boolean;
+  active: boolean; // false = person left the company, never count their meetings
+  tracked: boolean; // false = person is in the registry but not counted for attendance/fines (e.g. admin testing an account)
 }
 
 export interface UnknownBdaName {

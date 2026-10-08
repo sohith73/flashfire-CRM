@@ -1,11 +1,13 @@
 import { API_BASE_URL } from '../config';
 import type { MarkPresentResponse, MyMonthResponse, MyWindowResponse } from '../types/attendance';
 
-/** A failed API call. `status` is 0 when the server could not be reached at all. */
+/** A failed API call from the backend. `status` is 0 when the network was unreachable.
+ * Includes `code` (snake_case error identifier) and `details` (extra fields like windowOpensAt on 409s).
+ */
 export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string | null;
-  /** Extra fields from the error body, for example `windowOpensAt` on 409 window_not_open. */
+  readonly status: number; // HTTP status code, or 0 if network unreachable
+  readonly code: string | null; // Error code from the backend (e.g. 'window_closed', 'not_assigned')
+  /** Extra fields from the error response, used by the caller. Examples: windowOpensAt, windowClosesAt on 409. */
   readonly details: Record<string, unknown>;
 
   constructor(status: number, code: string | null, message: string, details: Record<string, unknown> = {}) {
@@ -39,9 +41,9 @@ function toApiError(status: number, body: unknown): ApiError {
   return new ApiError(status, null, `Request failed (${status})`);
 }
 
-/**
- * Calls the CRM backend with the logged-in user's bearer token.
- * The token comes from CrmAuthContext (`useCrmAuth().token`), so there is one place that owns it.
+/** Calls the CRM backend with the logged-in user's bearer token. Throws ApiError on failure.
+ * Token comes from CrmAuthContext so the auth logic stays in one place. Every route except login needs a token.
+ * Request errors are parsed into ApiError (code, message, details) so the caller handles them uniformly.
  */
 export async function crmRequest<T>(path: string, token: string | null, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
