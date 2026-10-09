@@ -1,3 +1,4 @@
+import { queryClient } from '../api/queryClient';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { CrmModule, CrmPermission, CrmUser } from './crmTypes';
 
@@ -37,6 +38,12 @@ export function CrmAuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState<CrmUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
+
+  // Cached attendance and deduction data belongs to one person. When the signed-in user changes (logout, a different
+  // login on the same tab) the cache is dropped, so the next person never sees the previous one's rows while loading.
+  useEffect(() => {
+    queryClient.clear();
+  }, [user?.email]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
