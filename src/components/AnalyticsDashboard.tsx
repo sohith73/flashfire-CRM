@@ -56,6 +56,8 @@ import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanCo
 import { useCrmAuth } from '../auth/CrmAuthContext';
 import LeadRatingPanel from './LeadRatingPanel';
 import type { LeadTemperature } from '../utils/leadTemperature';
+import { canSetAnyStatus, statusMenuFor } from '../utils/bdaStatusOptions';
+import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -129,6 +131,7 @@ interface AnalyticsDashboardProps {
 export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDashboardProps) {
   const { planOptions } = usePlanConfig();
   const { user, token } = useCrmAuth();
+  const ignorePrompt = useIgnoreReasonPrompt();
   // Post-meeting rating. `pendingCompletion` holds the status change waiting on a
   // rating: it is applied only once the rating saves, so a booking can never be
   // completed without one.
@@ -570,6 +573,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
           changedByName: user?.name,
           source: user?.role === 'admin' ? 'admin' : 'bda',
           ...(planPayload ? { plan: planPayload } : {}),
+          ...(status === 'ignored' ? { ignoreReason: ignorePrompt.takeReason(bookingId) } : {}),
         }),
       });
       const data = await response.json();
@@ -853,6 +857,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
 
   return (
     <>
+      {ignorePrompt.dialog}
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {toasts.map((toast) => (
@@ -1445,7 +1450,8 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                     <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-100">
                                       Change Status
                                     </div>
-                                    {(['scheduled', 'completed', 'no-show', 'rescheduled', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
+                                    {/* BDAs only record the meeting outcome: Completed, No Show, Paid, Ignored. */}
+                                    {statusMenuFor(user, ['scheduled', 'completed', 'no-show', 'rescheduled', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
                                       if (status === booking.bookingStatus) return null;
                                       const statusIcon = status === 'completed' ? CheckCircle2 : status === 'no-show' ? AlertTriangle : status === 'paid' ? DollarSign : status === 'rescheduled' ? Clock : status === 'canceled' ? X : status === 'ignored' ? X : Calendar;
                                       const StatusIcon = statusIcon;
@@ -1460,8 +1466,17 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                                 return;
                                               }
                                               setPlanPickerFor(null);
-                                              handleStatusUpdate(booking.bookingId, status);
                                               setOpenStatusDropdown(null);
+                                              if (status === 'ignored') {
+                                                ignorePrompt.ask({
+                                                  bookingId: booking.bookingId,
+                                                  clientName: booking.clientName,
+                                                  clientEmail: booking.clientEmail,
+                                                  onConfirmed: () => handleStatusUpdate(booking.bookingId, 'ignored'),
+                                                });
+                                                return;
+                                              }
+                                              handleStatusUpdate(booking.bookingId, status);
                                             }}
                                             className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition flex items-center gap-3 group"
                                           >
@@ -1542,6 +1557,8 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                             {/* No-Show Follow-up Actions */}
                             {booking.bookingStatus === 'no-show' && (
                               <>
+                                {/* Unmark moves the lead back to Scheduled, which only admins may set. */}
+                                {canSetAnyStatus(user) && (
                                 <button
                                   onClick={() => handleStatusUpdate(booking.bookingId, 'scheduled')}
                                   disabled={updatingBookingId === booking.bookingId}
@@ -1554,6 +1571,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                   )}
                                   Unmark
                                 </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     if (booking.clientEmail) {

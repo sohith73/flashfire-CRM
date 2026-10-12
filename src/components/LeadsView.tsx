@@ -35,6 +35,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTo
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
+import { statusMenuFor } from '../utils/bdaStatusOptions';
+import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 import { useCallMinutes } from '../hooks/useCallMinutes';
 import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanConfigContext';
@@ -219,6 +221,7 @@ export default function LeadsView({
   dateRangeOnBookingCreatedAt = false,
 }: LeadsViewProps) {
   const { token, canEdit, user } = useCrmAuth();
+  const ignorePrompt = useIgnoreReasonPrompt();
   const editable = canEdit('leads');
   const { planOptions } = usePlanConfig();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -1192,6 +1195,11 @@ export default function LeadsView({
         changedByName: user?.name,
         source: user?.role === 'admin' ? 'admin' : 'bda',
       };
+
+      if (status === 'ignored') {
+        const ignoreReason = ignorePrompt.takeReason(bookingId);
+        if (ignoreReason) requestBody.ignoreReason = ignoreReason;
+      }
 
       if (planPayload) {
         requestBody.plan = planPayload;
@@ -2899,7 +2907,8 @@ export default function LeadsView({
               {/* 'rescheduled' is deliberately absent: it is set by Calendly when a client
                   actually reschedules, never by hand. Leads already in that status keep
                   showing it, and the Rating/Status filters still list it. */}
-              {(['not-scheduled', 'scheduled', 'completed', 'no-show', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
+              {/* BDAs only record the meeting outcome: Completed, No Show, Paid, Ignored. */}
+              {statusMenuFor(user, ['not-scheduled', 'scheduled', 'completed', 'no-show', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
                 if (status === openRow.status) return null;
                 const statusIcon = status === 'not-scheduled' ? Clock : status === 'completed' ? CheckCircle2 : status === 'no-show' ? AlertTriangle : status === 'paid' ? DollarSign : status === 'rescheduled' ? Clock : status === 'canceled' ? X : status === 'ignored' ? X : Calendar;
                 const StatusIcon = statusIcon;
@@ -2922,8 +2931,17 @@ export default function LeadsView({
                           return;
                         }
                         setPlanPickerFor(null);
-                        handleStatusUpdate(booking.bookingId, status);
                         setOpenStatusDropdown(null);
+                        if (status === 'ignored') {
+                          ignorePrompt.ask({
+                            bookingId: booking.bookingId,
+                            clientName: openRow.name,
+                            clientEmail: openRow.email,
+                            onConfirmed: () => handleStatusUpdate(booking.bookingId, 'ignored'),
+                          });
+                          return;
+                        }
+                        handleStatusUpdate(booking.bookingId, status);
                       }}
                       className={`w-full text-left px-2 py-1.5 text-[9px] transition flex items-center gap-1.5 group ${postMeetingBlocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-50'}`}
                     >
@@ -2965,6 +2983,8 @@ export default function LeadsView({
           document.body
         );
       })()}
+
+      {ignorePrompt.dialog}
 
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
