@@ -53,6 +53,8 @@ import { isStatusLockedForUser, statusLockMessage } from '../utils/statusLock';
 import { useCallMinutes } from '../hooks/useCallMinutes';
 import StatusHistoryPopover, { type StatusHistoryEntry } from './StatusHistoryPopover';
 import { formatRelativeTime } from '../utils/relativeTime';
+import { canSetAnyStatus, statusMenuFor } from '../utils/bdaStatusOptions';
+import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
 
@@ -265,6 +267,7 @@ interface CampaignDetails {
 
 export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCampaign }: UnifiedDataViewProps) {
   const { canEdit, user, token } = useCrmAuth();
+  const ignorePrompt = useIgnoreReasonPrompt();
   const editable = canEdit('all_data');
   const { planOptions } = usePlanConfig();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -980,6 +983,11 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
         source: user?.role === 'admin' ? 'admin' : 'bda',
       };
 
+      if (status === 'ignored') {
+        const ignoreReason = ignorePrompt.takeReason(bookingId);
+        if (ignoreReason) requestBody.ignoreReason = ignoreReason;
+      }
+
       if (planPayload) {
         requestBody.plan = planPayload;
       }
@@ -1313,6 +1321,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
 
   return (
     <div className="w-full py-10 space-y-6">
+      {ignorePrompt.dialog}
       {/* Toast Notifications */}
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {toasts.map((toast) => (
@@ -2088,7 +2097,8 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                                   {/* 'rescheduled' is deliberately absent: it is set by Calendly when a
                                       client actually reschedules, never by hand. Leads already in that
                                       status keep showing it, and the Status filter still lists it. */}
-                                  {(['scheduled', 'completed', 'no-show', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
+                                  {/* BDAs only record the meeting outcome: Completed, No Show, Paid, Ignored. */}
+                                  {statusMenuFor(user, ['scheduled', 'completed', 'no-show', 'paid', 'canceled', 'ignored'] as BookingStatus[]).map((status) => {
                                     if (status === row.status) return null;
                                     const StatusIcon =
                                       status === 'completed'
@@ -2116,8 +2126,17 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                                               return;
                                             }
                                             setPlanPickerFor(null);
-                                            handleStatusUpdate(booking.bookingId, status);
                                             setOpenStatusDropdown(null);
+                                            if (status === 'ignored') {
+                                              ignorePrompt.ask({
+                                                bookingId: booking.bookingId,
+                                                clientName: row.name,
+                                                clientEmail: row.email,
+                                                onConfirmed: () => handleStatusUpdate(booking.bookingId, 'ignored'),
+                                              });
+                                              return;
+                                            }
+                                            handleStatusUpdate(booking.bookingId, status);
                                           }}
                                           className="w-full text-left px-4 py-2.5 text-[10px] hover:bg-slate-50 transition flex items-center gap-3 group"
                                         >
@@ -2416,6 +2435,8 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                             )}
                             {row.status === 'no-show' && (
                               <div className="flex items-center gap-2">
+                                {/* Unmark moves the lead back to Scheduled, which only admins may set. */}
+                                {canSetAnyStatus(user) && (
                                 <button
                                   onClick={() => {
                                     if (booking) {
@@ -2432,6 +2453,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                                   )}
                                   Unmark
                                 </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     if (booking && booking.clientEmail) {

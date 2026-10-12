@@ -11,6 +11,8 @@ export interface StatusHistoryEntry {
   changedByName?: string | null;
   source?: string | null;
   changedAt?: string | null;
+  /** Why the lead was ignored, e.g. "Duplicate lead: booked twice". Only on 'ignored' entries. */
+  reason?: string | null;
 }
 
 interface StatusHistoryPopoverProps {
@@ -215,6 +217,12 @@ export default function StatusHistoryPopover({
                             </>
                           )}
                         </div>
+                        {e.reason && (
+                          <div className="text-[11px] text-slate-600 mt-0.5 break-words">
+                            <span className="font-medium text-slate-500">Reason: </span>
+                            {e.reason}
+                          </div>
+                        )}
                       </div>
                     </li>
                   );

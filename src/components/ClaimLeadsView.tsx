@@ -10,6 +10,8 @@ import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import { isStatusLockedForUser, statusLockMessage } from '../utils/statusLock';
 import StatusHistoryPopover, { type StatusHistoryEntry } from './StatusHistoryPopover';
 import { formatRelativeTime } from '../utils/relativeTime';
+import { statusMenuFor } from '../utils/bdaStatusOptions';
+import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 import { currencySymbol, formatMoney, normalizeCurrency, CURRENCY_OPTIONS, CURRENCY_SYMBOLS } from '../utils/currency';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
@@ -18,13 +20,27 @@ type ActiveTab = 'claim' | 'my_leads' | 'bda_performance';
 
 export type PaymentBreakdownLine = { planName: PlanName; amount: number; currency: string };
 
+// Statuses this screen can set. BDAs get the outcome subset (see statusMenuFor).
+type ClaimStatus = 'paid' | 'scheduled' | 'completed' | 'rescheduled' | 'no-show' | 'ignored';
+const CLAIM_STATUS_MENU: readonly ClaimStatus[] = ['scheduled', 'paid', 'completed', 'rescheduled', 'no-show', 'ignored'];
+const CLAIM_STATUS_LABELS: Record<string, string> = {
+  'not-scheduled': 'NOT SCHEDULED',
+  scheduled: 'SCHEDULED',
+  paid: 'PAID',
+  completed: 'COMPLETED',
+  rescheduled: 'RESCHEDULED',
+  'no-show': 'NO SHOW',
+  ignored: 'IGNORED',
+  canceled: 'CANCELED',
+};
+
 interface Lead {
   bookingId: string;
   clientName: string;
   clientEmail: string;
   clientPhone?: string;
   scheduledEventStartTime?: string;
-  bookingStatus: 'paid' | 'scheduled' | 'completed' | 'rescheduled';
+  bookingStatus: ClaimStatus | 'canceled' | 'not-scheduled';
   paymentPlan?: {
     name: PlanName;
     price: number;
@@ -62,6 +78,7 @@ interface Lead {
 
 export default function ClaimLeadsView() {
   const { user, token, canEdit } = useCrmAuth();
+  const ignorePrompt = useIgnoreReasonPrompt();
   const editable = canEdit('claim_leads');
   const { planOptions, incentiveConfig } = usePlanConfig();
   const [activeTab, setActiveTab] = useState<ActiveTab>('claim');
@@ -78,7 +95,7 @@ export default function ClaimLeadsView() {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<Lead>>({});
   const [showPaidConfirmModal, setShowPaidConfirmModal] = useState(false);
-  const [pendingStatusChange, setPendingStatusChange] = useState<{ status: 'paid' | 'scheduled' | 'completed' | 'rescheduled' } | null>(null);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{ status: ClaimStatus } | null>(null);
   
   const [myLeads, setMyLeads] = useState<Lead[]>([]);
   const [myLeadsLoading, setMyLeadsLoading] = useState(false);
@@ -408,7 +425,7 @@ export default function ClaimLeadsView() {
   };
 
   const handleStatusUpdate = async (
-    newStatus: 'paid' | 'scheduled' | 'completed' | 'rescheduled',
+    newStatus: ClaimStatus,
     /** Set once the rating has been saved, so the completion gate below runs only once. */
     ratingSaved = false,
   ) => {
@@ -419,6 +436,14 @@ export default function ClaimLeadsView() {
     setSuccess(null);
 
     try {
+      if (newStatus === 'no-show') {
+        const timeRule = validatePostMeetingBookingStatus(lead.scheduledEventStartTime, newStatus);
+        if (!timeRule.ok) {
+          setError(timeRule.message);
+          return;
+        }
+      }
+
       if (newStatus === 'completed') {
         const timeRule = validatePostMeetingBookingStatus(lead.scheduledEventStartTime, newStatus);
         if (!timeRule.ok) {
@@ -471,6 +496,10 @@ export default function ClaimLeadsView() {
       }
       if (newStatus === 'paid' && allLines.length > 0) {
         requestBody.paymentBreakdown = allLines;
+      }
+      if (newStatus === 'ignored') {
+        const ignoreReason = ignorePrompt.takeReason(lead.bookingId);
+        if (ignoreReason) requestBody.ignoreReason = ignoreReason;
       }
 
       const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/${lead.bookingId}/status`, {
@@ -603,6 +632,7 @@ export default function ClaimLeadsView() {
 
   return (
     <div className="p-6 space-y-6">
+      {ignorePrompt.dialog}
       <div>
         <p className="text-sm uppercase tracking-wider text-slate-500 font-semibold mb-1">BDA LEAD MANAGEMENT</p>
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Claim Your Leads</h1>
@@ -1050,7 +1080,16 @@ export default function ClaimLeadsView() {
                               setError(statusLockMessage(lead));
                               return;
                             }
-                            const newStatus = e.target.value as 'paid' | 'scheduled' | 'completed' | 'rescheduled';
+                            const newStatus = e.target.value as ClaimStatus;
+                            if (newStatus === 'ignored') {
+                              ignorePrompt.ask({
+                                bookingId: lead.bookingId,
+                                clientName: lead.clientName,
+                                clientEmail: lead.clientEmail,
+                                onConfirmed: () => handleStatusUpdate('ignored'),
+                              });
+                              return;
+                            }
                             if (newStatus === 'paid' && lead.bookingStatus !== 'paid') {
                               if (!formData.paymentPlan || !formData.paymentPlan.name) {
                                 setError('Please select a plan before marking as paid');
@@ -1071,10 +1110,16 @@ export default function ClaimLeadsView() {
                           disabled={saving || !editable || isStatusLockedForUser(lead, user)}
                           title={isStatusLockedForUser(lead, user) ? statusLockMessage(lead) : (!isClaimed ? 'You can change status before or after claiming.' : undefined)}
                         >
-                          <option value="scheduled">SCHEDULED</option>
-                          <option value="paid">PAID</option>
-                          <option value="completed">COMPLETED</option>
-                          <option value="rescheduled">RESCHEDULED</option>
+                          {/* BDAs only record the meeting outcome: Completed, No Show, Paid, Ignored.
+                              The current status stays visible even when it is not one of those. */}
+                          {!statusMenuFor(user, CLAIM_STATUS_MENU).includes(lead.bookingStatus as ClaimStatus) && (
+                            <option value={lead.bookingStatus} disabled>
+                              {CLAIM_STATUS_LABELS[lead.bookingStatus] ?? lead.bookingStatus}
+                            </option>
+                          )}
+                          {statusMenuFor(user, CLAIM_STATUS_MENU).map((s) => (
+                            <option key={s} value={s}>{CLAIM_STATUS_LABELS[s]}</option>
+                          ))}
                         </select>
                         {lead.statusChangedByName && (
                           <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
