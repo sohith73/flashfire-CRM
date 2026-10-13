@@ -56,7 +56,8 @@ import { usePlanConfig, type PlanOption, type PlanName } from '../context/PlanCo
 import { useCrmAuth } from '../auth/CrmAuthContext';
 import LeadRatingPanel from './LeadRatingPanel';
 import type { LeadTemperature } from '../utils/leadTemperature';
-import { canSetAnyStatus, statusMenuFor } from '../utils/bdaStatusOptions';
+import { canSetAnyStatus, statusMenuFor, type IgnoreReason } from '../utils/bdaStatusOptions';
+import IgnoreReasonNote from './IgnoreReasonNote';
 import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
@@ -71,6 +72,7 @@ type PaymentPlan = {
 };
 
 interface Booking {
+  ignoreReason?: IgnoreReason | null;
   bookingId: string;
   clientName: string;
   clientEmail: string;
@@ -588,6 +590,7 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                 ...booking,
                 bookingStatus: status,
                 paymentPlan: updatedBooking?.paymentPlan || planPayload || booking.paymentPlan,
+                ignoreReason: updatedBooking ? updatedBooking.ignoreReason ?? null : booking.ignoreReason,
               }
             : booking,
         );
@@ -1524,6 +1527,14 @@ export default function AnalyticsDashboard({ onOpenEmailCampaign }: AnalyticsDas
                                 </>
                               )}
                             </div>
+
+                            {/* Own line at the end of this wrapping row: basis-full + order-last. */}
+                            <IgnoreReasonNote
+                              status={booking.bookingStatus}
+                              reason={booking.ignoreReason}
+                              size="sm"
+                              className="!mt-0 basis-full order-last"
+                            />
 
                             {/* Join Button */}
                             {meetLink && (

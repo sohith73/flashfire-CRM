@@ -5,6 +5,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { validatePostMeetingBookingStatus } from '../../utils/postMeetingStatus';
 import { currencySymbol } from '../../utils/currency';
 import StatusHistoryPopover, { type StatusHistoryEntry } from '../../components/StatusHistoryPopover';
+import IgnoreReasonNote from '../../components/IgnoreReasonNote';
+import type { IgnoreReason } from '../../utils/bdaStatusOptions';
 import { formatRelativeTime } from '../../utils/relativeTime';
 import BdaRegistryAdmin from '../../components/attendance/BdaRegistryAdmin';
 
@@ -67,6 +69,7 @@ interface Lead {
   statusChangedAt?: string | null;
   statusChangeSource?: string | null;
   statusHistory?: StatusHistoryEntry[];
+  ignoreReason?: IgnoreReason | null;
   calendlyHost?: {
     email?: string | null;
     name?: string | null;
@@ -1342,6 +1345,7 @@ export default function BdaAnalysisPage() {
                                   </span>
                                 </span>
                               )}
+                              <IgnoreReasonNote status={lead.bookingStatus} reason={lead.ignoreReason} size="sm" className="!mt-0 basis-full order-last" />
                               {lead.bdaApprovalStatus && (
                                 <span
                                   className={`px-2 py-1 rounded-full text-[11px] font-semibold ${

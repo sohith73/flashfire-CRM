@@ -53,7 +53,8 @@ import { isStatusLockedForUser, statusLockMessage } from '../utils/statusLock';
 import { useCallMinutes } from '../hooks/useCallMinutes';
 import StatusHistoryPopover, { type StatusHistoryEntry } from './StatusHistoryPopover';
 import { formatRelativeTime } from '../utils/relativeTime';
-import { canSetAnyStatus, statusMenuFor } from '../utils/bdaStatusOptions';
+import { canSetAnyStatus, statusMenuFor, type IgnoreReason } from '../utils/bdaStatusOptions';
+import IgnoreReasonNote from './IgnoreReasonNote';
 import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.flashfirejobs.com';
@@ -106,6 +107,7 @@ interface Booking {
   statusChangedAt?: string | null;
   statusChangeSource?: string | null;
   statusHistory?: StatusHistoryEntry[];
+  ignoreReason?: IgnoreReason | null;
   leadTemperature?: {
     value?: LeadTemperature | null;
     ratedByEmail?: string | null;
@@ -166,6 +168,7 @@ interface UnifiedRow {
   statusChangedAt?: string | null;
   statusChangeSource?: string | null;
   statusHistory?: StatusHistoryEntry[];
+  ignoreReason?: IgnoreReason | null;
   calendlyHost?: {
     email?: string | null;
     name?: string | null;
@@ -564,6 +567,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
           statusChangedAt: booking.statusChangedAt,
           statusChangeSource: booking.statusChangeSource,
           statusHistory: booking.statusHistory,
+          ignoreReason: booking.ignoreReason ?? null,
           calendlyHost: booking.calendlyHost,
           leadOwner: booking.leadOwner,
           leadTemperature: booking.leadTemperature,
@@ -595,6 +599,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
           statusChangedAt: booking.statusChangedAt,
           statusChangeSource: booking.statusChangeSource,
           statusHistory: booking.statusHistory,
+          ignoreReason: booking.ignoreReason ?? null,
           calendlyHost: booking.calendlyHost,
           leadOwner: booking.leadOwner,
           leadTemperature: booking.leadTemperature,
@@ -1023,6 +1028,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                 statusChangedAt: updatedBooking?.statusChangedAt ?? booking.statusChangedAt,
                 statusChangeSource: updatedBooking?.statusChangeSource ?? booking.statusChangeSource,
                 statusHistory: updatedBooking?.statusHistory ?? booking.statusHistory,
+                ignoreReason: updatedBooking ? updatedBooking.ignoreReason ?? null : booking.ignoreReason,
               }
             : booking,
         );
@@ -2022,6 +2028,7 @@ export default function UnifiedDataView({ onOpenEmailCampaign, onOpenWhatsAppCam
                                 {row.statusChangedAt && <> · {formatRelativeTime(row.statusChangedAt)}</>}
                               </div>
                             )}
+                            <IgnoreReasonNote status={row.status} reason={row.ignoreReason} />
 
                             {/* Lead owner — the client's BDA, identical on every row of that
                                 client. A rebooking re-rolls the Calendly host, so the host is

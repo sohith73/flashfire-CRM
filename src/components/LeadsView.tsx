@@ -35,7 +35,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTo
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
 import { useCrmAuth } from '../auth/CrmAuthContext';
-import { statusMenuFor } from '../utils/bdaStatusOptions';
+import { statusMenuFor, type IgnoreReason } from '../utils/bdaStatusOptions';
+import IgnoreReasonNote from './IgnoreReasonNote';
 import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 import { useCallMinutes } from '../hooks/useCallMinutes';
 import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
@@ -175,6 +176,7 @@ interface Booking {
   statusChangedAt?: string | null;
   statusChangeSource?: string | null;
   statusHistory?: StatusHistoryEntry[];
+  ignoreReason?: IgnoreReason | null;
   calendlyHost?: {
     email?: string | null;
     name?: string | null;
@@ -740,6 +742,7 @@ export default function LeadsView({
         statusChangedAt: booking.statusChangedAt,
         statusChangeSource: booking.statusChangeSource,
         statusHistory: booking.statusHistory,
+        ignoreReason: booking.ignoreReason ?? null,
         calendlyHost: booking.calendlyHost,
         leadOwner: booking.leadOwner,
         leadTemperature: booking.leadTemperature,
@@ -1234,6 +1237,7 @@ export default function LeadsView({
         statusChangedAt: updatedBooking?.statusChangedAt ?? booking.statusChangedAt,
         statusChangeSource: updatedBooking?.statusChangeSource ?? booking.statusChangeSource,
         statusHistory: updatedBooking?.statusHistory ?? booking.statusHistory,
+        ignoreReason: updatedBooking ? updatedBooking.ignoreReason ?? null : booking.ignoreReason,
       });
 
       setBookings((prev) =>
@@ -2308,6 +2312,8 @@ export default function LeadsView({
                             {row.statusChangedAt && <> · {formatRelativeTime(row.statusChangedAt)}</>}
                           </div>
                         )}
+
+                        <IgnoreReasonNote status={row.status} reason={row.ignoreReason} />
 
                         {/* Lead owner — the client's BDA, identical on every row of that
                             client. The Calendly host is re-rolled on each rebooking, so it

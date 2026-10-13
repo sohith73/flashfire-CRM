@@ -10,7 +10,8 @@ import { validatePostMeetingBookingStatus } from '../utils/postMeetingStatus';
 import { isStatusLockedForUser, statusLockMessage } from '../utils/statusLock';
 import StatusHistoryPopover, { type StatusHistoryEntry } from './StatusHistoryPopover';
 import { formatRelativeTime } from '../utils/relativeTime';
-import { statusMenuFor } from '../utils/bdaStatusOptions';
+import { statusMenuFor, type IgnoreReason } from '../utils/bdaStatusOptions';
+import IgnoreReasonNote from './IgnoreReasonNote';
 import { useIgnoreReasonPrompt } from '../hooks/useIgnoreReasonPrompt';
 import { currencySymbol, formatMoney, normalizeCurrency, CURRENCY_OPTIONS, CURRENCY_SYMBOLS } from '../utils/currency';
 
@@ -68,6 +69,7 @@ interface Lead {
   statusChangedAt?: string | null;
   statusChangeSource?: string | null;
   statusHistory?: StatusHistoryEntry[];
+  ignoreReason?: IgnoreReason | null;
   calendlyHost?: {
     email?: string | null;
     name?: string | null;
@@ -1137,6 +1139,7 @@ export default function ClaimLeadsView() {
                             />
                           </div>
                         )}
+                        <IgnoreReasonNote status={lead.bookingStatus} reason={lead.ignoreReason} size="sm" />
                         {(lead.calendlyHost?.name || lead.calendlyHost?.email) && (
                           <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-indigo-50 border border-indigo-100 px-2 py-1 text-xs font-semibold text-indigo-700">
                             👤 Assigned BDA: {lead.calendlyHost?.name || lead.calendlyHost?.email}
@@ -1332,7 +1335,7 @@ export default function ClaimLeadsView() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
+                            <div className="flex flex-wrap items-center gap-3 mb-2">
                               <h3 className="font-semibold text-slate-900">{item.clientName}</h3>
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
                                 item.bookingStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' :
@@ -1359,6 +1362,7 @@ export default function ClaimLeadsView() {
                                   </span>
                                 </div>
                               )}
+                              <IgnoreReasonNote status={item.bookingStatus} reason={item.ignoreReason} size="sm" className="!mt-0 basis-full" />
                             </div>
                             <div className="text-sm text-slate-600 space-y-1">
                               <p><Mail size={14} className="inline mr-1" />{item.clientEmail}</p>
