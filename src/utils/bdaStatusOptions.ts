@@ -57,3 +57,18 @@ export function ignoreReasonProblem(code: string | null, note: string): string |
   if (code === 'other' && !trimmed) return 'Write a short reason for "Other".';
   return null;
 }
+
+/** The reason stored on a booking while it is Ignored (CampaignBooking.ignoreReason). */
+export interface IgnoreReason {
+  code: string;
+  label: string;
+  note?: string | null;
+  setByEmail?: string | null;
+  setByName?: string | null;
+  setAt?: string | null;
+}
+
+/** Label for a stored reason; falls back to the local list, then the raw code. */
+export function ignoreReasonLabel(reason: Pick<IgnoreReason, 'code' | 'label'>): string {
+  return reason.label || IGNORE_REASONS.find((r) => r.code === reason.code)?.label || reason.code;
+}
