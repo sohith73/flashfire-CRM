@@ -102,9 +102,8 @@ const TAB_CONFIG: Array<{
   { tab: 'email_templates', permission: 'email_campaign', label: 'Email Templates', icon: FileText },
   { tab: 'payment_links', permission: 'payment_links', label: 'Payment Link Generator', icon: CreditCard },
   { tab: 'payroll', permission: 'payroll', label: 'Payroll', icon: DollarSign },
-  // Rule 2.6: a BDA sees every deduction against them, so this cannot hang on an unrelated permission. The server
-  // returns only the caller's own rows (all rows for admins); an untracked user just sees an empty list.
-  { tab: 'deductions', permission: null, label: 'Deductions', icon: Receipt },
+  // Granted per user from the admin dashboard. The server returns only the caller's own rows (all rows for admins).
+  { tab: 'deductions', permission: 'deductions', label: 'Deductions', icon: Receipt },
 ];
 
 export default function CrmDashboardPage() {
