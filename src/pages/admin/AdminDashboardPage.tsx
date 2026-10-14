@@ -24,7 +24,8 @@ type CrmModule =
   | 'graphs03'
   | 'phone_calls'
   | 'payment_links'
-  | 'payroll';
+  | 'payroll'
+  | 'deductions';
 
 type CrmPermission = CrmModule | `${CrmModule}_edit`;
 
@@ -48,6 +49,7 @@ const PERMISSIONS: Array<{ key: CrmModule; label: string; description: string; v
   { key: 'phone_calls', label: 'Phone Calls', description: 'Access Zoom Phone call recordings and per-lead call history' },
   { key: 'payment_links', label: 'Payment Link Generator', description: 'Generate discounted Stripe Checkout links for clients (BDA internal tool)' },
   { key: 'payroll', label: 'Payroll Management', description: 'Employee payroll, salary calculation, incentives and deductions' },
+  { key: 'deductions', label: 'Deductions', description: 'Attendance deductions tab (BDAs see only their own; admins see all)' },
 ];
 
 type CrmUserRow = {
