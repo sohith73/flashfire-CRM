@@ -110,6 +110,8 @@ const TAB_CONFIG: Array<{
   // Same reasoning as Deductions: every BDA files their own leave, so it cannot hang on a
   // permission. The server scopes the rows and only an admin may approve.
   { tab: 'leave', permission: null, label: 'Leave', icon: CalendarDays },
+  // Granted per user from the admin dashboard. The server returns only the caller's own rows (all rows for admins).
+  { tab: 'deductions', permission: 'deductions', label: 'Deductions', icon: Receipt },
 ];
 
 export default function CrmDashboardPage() {

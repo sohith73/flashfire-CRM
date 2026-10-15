@@ -9,6 +9,8 @@ import {
   X,
   Check,
   UserCheck,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 import { CURRENCY_SYMBOLS } from '../utils/currency';
@@ -33,6 +35,28 @@ const money = (amount: number | null | undefined, code: string | null | undefine
 
 const inr = (amount: number | null | undefined) =>
   amount == null ? '—' : `₹${Math.round(Number(amount)).toLocaleString()}`;
+
+function currentYearMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function fmtMonthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+function claimMonth(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 type SearchResult = {
   bookingId: string;
@@ -106,6 +130,10 @@ export default function ClaimLeadsView02() {
   // Per-row edit state: rowId -> { currency, amount }
   const [editing, setEditing] = useState<Record<string, { currency: string; amount: string }>>({});
   const [savingRow, setSavingRow] = useState<string | null>(null);
+
+  // Month filter (by claimed date)
+  const [month, setMonth] = useState<string>(currentYearMonth());
+  const isCurrentMonth = month === currentYearMonth();
 
   // Admin filters
   const [bdaFilter, setBdaFilter] = useState<string>('all');
@@ -311,14 +339,37 @@ export default function ClaimLeadsView02() {
     }
   };
 
+  const monthClaims = useMemo(
+    () => claims.filter((c) => claimMonth(c.claimedAt) === month),
+    [claims, month]
+  );
+
+  // Per-BDA stats for the selected month
+  const monthBdas = useMemo(
+    () =>
+      bdas.map((b) => {
+        const mine = monthClaims.filter((c) => c.claimedBy?.email === b.email);
+        const sum = (st: Claim['status']) =>
+          mine.filter((c) => c.status === st).reduce((a, c) => a + (c.incentiveInr || 0), 0);
+        return {
+          ...b,
+          count: mine.length,
+          approvedCount: mine.filter((c) => c.status === 'approved').length,
+          earnedIncentiveInr: sum('approved'),
+          pendingIncentiveInr: sum('pending'),
+        };
+      }),
+    [bdas, monthClaims]
+  );
+
   const visibleClaims = useMemo(() => {
-    if (!isAdmin) return claims;
-    return claims.filter((c) => {
+    if (!isAdmin) return monthClaims;
+    return monthClaims.filter((c) => {
       if (bdaFilter !== 'all' && c.claimedBy?.email !== bdaFilter) return false;
       if (statusFilter !== 'all' && c.status !== statusFilter) return false;
       return true;
     });
-  }, [claims, isAdmin, bdaFilter, statusFilter]);
+  }, [monthClaims, isAdmin, bdaFilter, statusFilter]);
 
   // ---- render helpers ----
 
@@ -326,9 +377,31 @@ export default function ClaimLeadsView02() {
 
   return (
     <div className="p-4 sm:p-6 max-w-[1500px] mx-auto">
-      <div className="flex items-center gap-2 mb-1">
-        <UserCheck className="text-purple-600" size={22} />
-        <h2 className="text-xl font-extrabold text-gray-900">Claim Leads 02</h2>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-1">
+        <div className="flex items-center gap-2">
+          <UserCheck className="text-purple-600" size={22} />
+          <h2 className="text-xl font-extrabold text-gray-900">Claim Leads 02</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setMonth((m) => shiftMonth(m, -1))}
+            className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+            title="Previous month"
+          >
+            <ChevronLeft size={16} className="text-gray-600" />
+          </button>
+          <span className="text-sm font-semibold text-gray-800 min-w-[140px] text-center">
+            {fmtMonthLabel(month)}
+          </span>
+          <button
+            onClick={() => setMonth((m) => shiftMonth(m, 1))}
+            disabled={isCurrentMonth}
+            className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-40 transition"
+            title="Next month"
+          >
+            <ChevronRight size={16} className="text-gray-600" />
+          </button>
+        </div>
       </div>
       <p className="text-sm text-gray-500 mb-4">
         {isAdmin
@@ -412,9 +485,9 @@ export default function ClaimLeadsView02() {
       )}
 
       {/* Per-BDA earned-incentive summary */}
-      {isAdmin && bdas.length > 0 && (
+      {isAdmin && monthBdas.length > 0 && (
         <div className="mb-4 flex flex-wrap gap-3">
-          {bdas.map((b) => (
+          {monthBdas.map((b) => (
             <button
               key={b.email}
               onClick={() => setBdaFilter((cur) => (cur === b.email ? 'all' : b.email))}
@@ -455,7 +528,7 @@ export default function ClaimLeadsView02() {
               <option value="all">All</option>
               {bdas.map((b) => (
                 <option key={b.email} value={b.email}>
-                  {b.name} ({b.count})
+                  {b.name} ({monthBdas.find((x) => x.email === b.email)?.count ?? 0})
                 </option>
               ))}
             </select>
@@ -516,7 +589,7 @@ export default function ClaimLeadsView02() {
             ) : visibleClaims.length === 0 ? (
               <tr>
                 <td colSpan={bdaColCount} className="px-3 py-8 text-center text-gray-400">
-                  No claimed leads yet.
+                  No claimed leads in {fmtMonthLabel(month)}.
                 </td>
               </tr>
             ) : (
