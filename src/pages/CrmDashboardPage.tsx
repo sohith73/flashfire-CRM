@@ -106,14 +106,13 @@ const TAB_CONFIG: Array<{
   { tab: 'email_templates', permission: 'email_campaign', label: 'Email Templates', icon: FileText },
   { tab: 'payment_links', permission: 'payment_links', label: 'Payment Link Generator', icon: CreditCard },
   { tab: 'payroll', permission: 'payroll', label: 'Payroll', icon: DollarSign },
-  // Rule 2.6: a BDA sees every deduction against them, so this cannot hang on an unrelated permission. The server
-  // returns only the caller's own rows (all rows for admins); an untracked user just sees an empty list.
-  { tab: 'deductions', permission: null, label: 'Deductions', icon: Receipt },
   // Same reasoning as Deductions: every BDA files their own leave, so it cannot hang on a
   // permission. The server scopes the rows and only an admin may approve.
   { tab: 'leave', permission: null, label: 'Leave', icon: CalendarDays },
   // Admins schedule calls and pick the BDA, BDAs see what was assigned to them. The server scopes the rows.
   { tab: 'sales_allocation', permission: null, label: 'Lead Allocation', icon: PhoneForwarded },
+  // Granted per user from the admin dashboard. The server returns only the caller's own rows (all rows for admins).
+  { tab: 'deductions', permission: 'deductions', label: 'Deductions', icon: Receipt },
 ];
 
 export default function CrmDashboardPage() {
