@@ -26,6 +26,7 @@ import {
   DollarSign,
   Receipt,
   CalendarDays,
+  PhoneForwarded,
 } from 'lucide-react';
 import type { EmailPrefillPayload } from '../types/emailPrefill';
 import type { WhatsAppPrefillPayload } from '../types/whatsappPrefill';
@@ -61,6 +62,7 @@ const PaymentLinkGeneratorView = React.lazy(() => import('../components/PaymentL
 const PayrollView = React.lazy(() => import('../components/PayrollView'));
 const DeductionsView = React.lazy(() => import('../components/attendance/DeductionsView'));
 const LeaveRequestsView = React.lazy(() => import('../components/attendance/LeaveRequestsView'));
+const SalesAllocationView = React.lazy(() => import('../components/salesAllocation/SalesAllocationView'));
 
 function TabSpinner() {
   return (
@@ -73,7 +75,7 @@ function TabSpinner() {
 }
 
 
-type Tab = 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'claim_leads_02' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links' | 'payroll' | 'deductions' | 'leave';
+type Tab = 'sales_allocation' | 'campaigns' | 'emails' | 'whatsapp' | 'analytics' | 'data' | 'workflows' | 'leads' | 'qualified_leads' | 'claim_leads' | 'claim_leads_02' | 'call_leads' | 'meeting_links' | 'meta_leads' | 'activity' | 'graphs' | 'graphs02' | 'graphs03' | 'stripe_data' | 'phone' | 'email_templates' | 'payment_links' | 'payroll' | 'deductions' | 'leave';
 
 const TAB_CONFIG: Array<{
   tab: Tab;
@@ -110,6 +112,8 @@ const TAB_CONFIG: Array<{
   // Same reasoning as Deductions: every BDA files their own leave, so it cannot hang on a
   // permission. The server scopes the rows and only an admin may approve.
   { tab: 'leave', permission: null, label: 'Leave', icon: CalendarDays },
+  // Admins schedule calls and pick the BDA, BDAs see what was assigned to them. The server scopes the rows.
+  { tab: 'sales_allocation', permission: null, label: 'Lead Allocation', icon: PhoneForwarded },
 ];
 
 export default function CrmDashboardPage() {
@@ -135,7 +139,16 @@ export default function CrmDashboardPage() {
   const canSee = useCallback((permission: CrmPermission | null) => permission === null || hasPermission(permission), [hasPermission]);
   const allowedTabs = useMemo(() => TAB_CONFIG.filter((t) => canSee(t.permission)), [canSee]);
 
-  const [activeTab, setActiveTab] = useState<Tab>('campaigns');
+  // The Discord call reminder links to /?tab=sales_allocation&id=..., so honour ?tab= once on load.
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    try {
+      const wanted = new URLSearchParams(window.location.search).get('tab');
+      if (wanted && TAB_CONFIG.some((t) => t.tab === wanted)) return wanted as Tab;
+    } catch {
+      /* no window.location in odd embeds; fall through */
+    }
+    return 'campaigns';
+  });
 
   const safeSetActiveTab = (tab: Tab) => {
     const cfg = TAB_CONFIG.find((t) => t.tab === tab);
@@ -529,6 +542,11 @@ export default function CrmDashboardPage() {
                 {activeTab === 'deductions' && (
                   <AttendanceErrorBoundary label="Deductions">
                     <DeductionsView />
+                  </AttendanceErrorBoundary>
+                )}
+                {activeTab === 'sales_allocation' && (
+                  <AttendanceErrorBoundary label="Lead Allocation">
+                    <SalesAllocationView />
                   </AttendanceErrorBoundary>
                 )}
                 {activeTab === 'leave' && (
