@@ -17,6 +17,8 @@ export interface AbsenceCandidate {
   clientName: string;
   /** ISO UTC instant the call started. */
   callStart: string;
+  /** true when the call has not started yet. Only admins are ever sent these. */
+  upcoming?: boolean;
   detail: string | null;
   /** Lead Allocation calls only: what the Zoom call log says. */
   callCheck?: CallCheck | null;

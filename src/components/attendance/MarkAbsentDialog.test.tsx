@@ -176,6 +176,20 @@ describe('MarkAbsentDialog as an admin', () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it('tags a call that has not started yet and warns before it is marked, and limits the To date to a week ahead', async () => {
+    const upcoming: AbsenceCandidate = { ...candidateAllocation, refId: 'alloc_up', clientName: 'Later Today', callStart: '2026-10-21T18:30:00.000Z', upcoming: true };
+    install({ ...routes(), 'GET /api/crm/absences/candidates': candidatesFor([candidateAllocation, upcoming]) });
+    renderDialog({ admin: true });
+    const dialog = await screen.findByRole('dialog', { name: /mark absent/i });
+    await within(dialog).findByText(/Later Today/);
+    expect(within(dialog).getAllByTestId('upcoming-chip')).toHaveLength(1);
+    expect(within(dialog).queryByTestId('upcoming-warning')).not.toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /Later Today/ }));
+    expect(within(dialog).getByTestId('upcoming-warning')).toHaveTextContent('1 of these have not happened yet');
+    expect(within(dialog).getByLabelText('To date')).toHaveAttribute('max');
+  });
+
   it('shows an empty state with the 30 day rule', async () => {
     install({ ...routes(), 'GET /api/crm/absences/candidates': candidatesFor([]) });
     renderDialog({ admin: true });
