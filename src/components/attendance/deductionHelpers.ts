@@ -158,6 +158,9 @@ export function seenFacts(d: Deduction): string[] {
   if (rowOrigin(d) === 'manual') return [];
   const a = d.attendance;
   const facts: string[] = [];
+  for (const c of d.evidence.coveredBy ?? []) {
+    facts.push(`${c.bdaName || c.bdaEmail} was in this meeting${c.minutes > 0 ? ` for about ${c.minutes} minutes` : ''}${c.joinedAt ? `, joined at ${clock(c.joinedAt)}` : ''}. The meeting was not reassigned in the CRM, so it is held for review.`);
+  }
   if (d.rule === 'missed_meeting') {
     const signals = d.evidence.signals ?? [];
     if (signals.length === 0) facts.push('No presence signal arrived before the window closed, one minute after the start.');
