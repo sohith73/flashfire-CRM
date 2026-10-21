@@ -449,6 +449,17 @@ export function reasonProblem(reason: string): string | null {
   return null;
 }
 
+/** Marking or reporting an absence needs a real sentence, the same rule as the server: 10 characters, 8 letters, 2 words. */
+export function absenceReasonProblem(reason: string): string | null {
+  const base = reasonProblem(reason);
+  if (base) return base;
+  const text = reason.trim();
+  const letters = (text.match(/\p{L}/gu) ?? []).length;
+  const words = text.split(/\s+/).filter((w) => /\p{L}/u.test(w)).length;
+  if (text.length < 10 || letters < 8 || words < 2) return 'Say what happened in a sentence (at least 10 characters), for example "Did not join and did not call the client".';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Focus return for dialogs
 // ---------------------------------------------------------------------------

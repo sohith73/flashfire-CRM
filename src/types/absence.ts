@@ -79,11 +79,15 @@ export interface CreateAbsenceBody {
   kind: AbsenceKind;
   refId: string;
   reason: string;
+  /** Admin only: mark it even though attendance shows the BDA joined. */
+  force?: boolean;
 }
 
 export interface BatchAbsenceBody {
   items: { kind: AbsenceKind; refId: string }[];
   reason: string;
+  /** Admin only: mark them even though attendance shows the BDA joined. */
+  force?: boolean;
 }
 
 /** 200 even when some calls were refused: every call has its own result, in the order the server handled them. */
