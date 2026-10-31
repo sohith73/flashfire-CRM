@@ -384,14 +384,14 @@ export function istDayKey(iso: string | null | undefined): string | null {
 export type DatePreset = 'today' | 'yesterday' | 'last7';
 export const DATE_PRESET_LABEL: Record<DatePreset, string> = { today: 'Today', yesterday: 'Yesterday', last7: 'Last 7 days' };
 
-const WORK_DAY_SHIFT_MS = 10 * 3600 * 1000;
+const WORK_DAY_SHIFT_MS = 8 * 3600 * 1000;
 
 /** The working day a row belongs to: the server's `workDay`, else the IST calendar day of the meeting start. */
 export function rowWorkDay(d: Deduction): string | null {
   return d.workDay && /^\d{4}-\d{2}-\d{2}$/.test(d.workDay) ? d.workDay : istDayKey(d.evidence?.scheduledStart);
 }
 
-/** { from, to } for a quick-date chip. "Today" is a working day: the IST date of now minus 10 hours, so at 2 AM IST it is still last evening's shift. */
+/** { from, to } for a quick-date chip. "Today" is a working day: the IST date of now minus 8 hours (a working day runs 08:00 to 08:00 IST), so at 2 AM IST it is still last evening's shift. */
 export function presetRange(preset: DatePreset, now: Date = new Date()): { from: string; to: string } {
   const day = (back: number) => istDayKey(new Date(now.getTime() - WORK_DAY_SHIFT_MS - back * 24 * 3600 * 1000).toISOString()) ?? '';
   if (preset === 'today') return { from: day(0), to: day(0) };

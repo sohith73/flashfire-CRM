@@ -316,8 +316,8 @@ describe('date filters', () => {
     expect(presetRange('today', now)).toEqual({ from: '2026-10-29', to: '2026-10-29' });
     expect(presetRange('yesterday', now)).toEqual({ from: '2026-10-28', to: '2026-10-28' });
     expect(presetRange('last7', now)).toEqual({ from: '2026-10-23', to: '2026-10-29' });
-    // From 10:00 IST the new calendar date is the working day again.
-    expect(presetRange('today', new Date('2026-10-30T10:00:00+05:30'))).toEqual({ from: '2026-10-30', to: '2026-10-30' });
+    // From 08:00 IST the new calendar date is the working day again.
+    expect(presetRange('today', new Date('2026-10-30T08:00:00+05:30'))).toEqual({ from: '2026-10-30', to: '2026-10-30' });
   });
 
   it('filters by workDay when present and falls back to the meeting start when missing', () => {
