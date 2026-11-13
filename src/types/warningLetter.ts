@@ -1,4 +1,4 @@
-/** Warning letters: a BDA who misses too many meetings in a rolling window gets a written warning.
+/** Warning letters: a BDA who misses too many meetings in a calendar month gets a written warning.
  * Server contract: /api/crm/warning-letters (errors are { success: false, error: { code, message } }).
  */
 
@@ -58,7 +58,8 @@ export interface WarningStanding {
 export interface WarningLettersResponse {
   success: true;
   mode: WarningMode;
-  windowDays: number;
+  /** The month being counted. Null before counting starts (13 Nov 2026). */
+  window: { from: string; to: string; label: string } | null;
   policy: WarningPolicyLevel[];
   letters: WarningLetter[];
   standings: WarningStanding[];

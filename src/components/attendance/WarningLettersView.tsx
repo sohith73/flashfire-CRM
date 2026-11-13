@@ -125,11 +125,11 @@ function ListState({
   return <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center">{empty}</div>;
 }
 
-function PolicyStrip() {
+function PolicyStrip({ windowLabel }: { windowLabel?: string | null }) {
   return (
     <section aria-labelledby="warning-policy-heading" className="rounded-xl border border-slate-200 bg-white p-4">
       <h2 id="warning-policy-heading" className="text-sm font-bold text-slate-900">
-        Missed meetings (rolling 30 days)
+        Missed meetings this month{windowLabel ? ` (${windowLabel})` : ''}
       </h2>
       <ul className="mt-2 grid gap-2 sm:grid-cols-4">
         {POLICY_ROWS.map((row) => (
@@ -207,7 +207,7 @@ function StandingsTable({ standings }: { standings: WarningStanding[] }) {
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th scope="col" className="px-4 py-2">BDA</th>
-              <th scope="col" className="px-4 py-2">Missed in last 30 days</th>
+              <th scope="col" className="px-4 py-2">Missed this month</th>
               <th scope="col" className="px-4 py-2">Level reached</th>
               <th scope="col" className="px-4 py-2">Next letter at</th>
             </tr>
@@ -246,7 +246,7 @@ function MyStandingCard({ standing }: { standing: WarningStanding | undefined })
         {standing ? (
           <>
             <div>
-              <p className="text-xs font-semibold text-slate-500">Missed in last 30 days</p>
+              <p className="text-xs font-semibold text-slate-500">Missed this month</p>
               <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{standing.missedCount}</p>
             </div>
             <div>
@@ -578,7 +578,7 @@ export default function WarningLettersView({ token, admin, onNotice }: WarningLe
 
   return (
     <div className="space-y-5">
-      <PolicyStrip />
+      <PolicyStrip windowLabel={query.data?.window?.label} />
 
       {admin && mode && <AdminControls token={token} mode={mode} />}
 

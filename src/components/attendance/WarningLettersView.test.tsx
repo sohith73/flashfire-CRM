@@ -26,7 +26,7 @@ function letter(id: string, partial: Partial<WarningLetter>): WarningLetter {
     ],
     status: 'draft',
     subject: 'First warning: missed meetings',
-    bodyText: 'Hi Siddhartha,\n\nYou missed 7 meetings in the last 30 days.\n\nRegards,\nFlashfire',
+    bodyText: 'Hi Siddhartha,\n\nYou missed 7 meetings in November.\n\nRegards,\nFlashfire',
     toEmail: 'siddhartha@flashfirehq.com',
     ccEmails: ['sohith@flashfirehq.com'],
     sentAt: null,
@@ -69,7 +69,7 @@ function payload(letters: WarningLetter[], extra: Partial<WarningLettersResponse
   return {
     success: true,
     mode: 'draft',
-    windowDays: 30,
+    window: { from: '2026-11-12T18:30:00.000Z', to: '2026-11-30T18:29:59.999Z', label: 'November 2026' },
     policy: [
       { level: 1, threshold: 7, title: 'First warning' },
       { level: 2, threshold: 10, title: 'Second warning' },
@@ -118,7 +118,7 @@ describe('WarningLettersView as an admin', () => {
     install({ 'GET /api/crm/warning-letters': () => payload(all) });
     renderView(true);
     expect(await screen.findByText('Letters are written as drafts. Review and send them here.')).toBeInTheDocument();
-    expect(screen.getByText('Missed meetings (rolling 30 days)')).toBeInTheDocument();
+    expect(screen.getByText('Missed meetings this month (November 2026)')).toBeInTheDocument();
     expect(screen.getByText('Third warning letter')).toBeInTheDocument();
     expect(screen.getByText(/waived deduction stops counting/)).toBeInTheDocument();
 

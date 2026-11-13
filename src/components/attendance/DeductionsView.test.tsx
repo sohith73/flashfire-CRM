@@ -632,7 +632,7 @@ describe('DeductionsView Warning letters tab', () => {
   const letters = {
     success: true,
     mode: 'draft',
-    windowDays: 30,
+    window: { from: '2026-11-12T18:30:00.000Z', to: '2026-11-30T18:29:59.999Z', label: 'November 2026' },
     policy: [],
     letters: [],
     standings: [{ bdaEmail: 'siddhartha@flashfirehq.com', bdaName: 'Siddhartha', missedCount: 8, level: 1, nextThreshold: 10 }],
