@@ -156,6 +156,10 @@ interface Booking {
   totalBookings?: number;
   firefliesTranscriptId?: string;
   leadSource?: 'calendly' | 'meta_lead_ad' | 'manual' | 'frontend_direct' | 'bulk_import';
+  /** Which register-site page the lead came from: 'us', 'ca' or 'uk'. Null on leads from before this was recorded. */
+  leadMarket?: 'us' | 'ca' | 'uk' | null;
+  /** The path the lead submitted from, for example '/uk'. */
+  landingRoute?: string | null;
   metaLeadId?: string | null;
   metaFormName?: string;
   metaCampaignName?: string | null;
@@ -249,6 +253,7 @@ export default function LeadsView({
   const [activeLeadsTab, setActiveLeadsTab] = useState<LeadsTab>('table');
   const [utmFilter, setUtmFilter] = useState<string>(defaultUtmSource || 'all');
   const [mediumFilter, setMediumFilter] = useState<string>('all');
+  const [marketFilter, setMarketFilter] = useState<string>('all');
   const [campaignFilter, setCampaignFilter] = useState<string>('all');
   const [minAmount, setMinAmount] = useState<string>('');
   const [maxAmount, setMaxAmount] = useState<string>('');
@@ -344,6 +349,7 @@ export default function LeadsView({
           bookedToDate,
           utmFilter,
           mediumFilter,
+          marketFilter,
           campaignFilter,
           search,
           statusFilter,
@@ -386,6 +392,7 @@ export default function LeadsView({
           const params = new URLSearchParams({ page: String(p), limit: '50' });
           if (utmFilter !== 'all') params.append('utmSource', utmFilter);
           if (mediumFilter !== 'all') params.append('utmMedium', mediumFilter);
+          if (marketFilter !== 'all') params.append('market', marketFilter);
           if (campaignFilter !== 'all') params.append('utmCampaign', campaignFilter);
           if (planFilter !== 'all') params.append('planName', planFilter);
           if (variant === 'qualified' && qualificationFilter !== 'all') {
@@ -475,6 +482,9 @@ export default function LeadsView({
         if (mediumFilter !== 'all') {
           params.append('utmMedium', mediumFilter);
         }
+        if (marketFilter !== 'all') {
+          params.append('market', marketFilter);
+        }
         if (campaignFilter !== 'all') {
           params.append('utmCampaign', campaignFilter);
         }
@@ -544,7 +554,7 @@ export default function LeadsView({
       setRefreshing(false);
       setLoading(false);
     }
-  }, [token, variant, planFilter, statusFilter, qualificationFilter, temperatureFilter, utmFilter, mediumFilter, campaignFilter, search, fromDate, toDate, bookedFromDate, bookedToDate, minAmount, maxAmount, dateRangeOnBookingCreatedAt]);
+  }, [token, variant, planFilter, statusFilter, qualificationFilter, temperatureFilter, utmFilter, mediumFilter, marketFilter, campaignFilter, search, fromDate, toDate, bookedFromDate, bookedToDate, minAmount, maxAmount, dateRangeOnBookingCreatedAt]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -651,7 +661,7 @@ export default function LeadsView({
     }, 250);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, planFilter, statusFilter, qualificationFilter, temperatureFilter, utmFilter, mediumFilter, campaignFilter, search, fromDate, toDate, minAmount, maxAmount, dateRangeOnBookingCreatedAt]);
+  }, [variant, planFilter, statusFilter, qualificationFilter, temperatureFilter, utmFilter, mediumFilter, marketFilter, campaignFilter, search, fromDate, toDate, minAmount, maxAmount, dateRangeOnBookingCreatedAt]);
 
   useEffect(() => {
     const handleBookingUpdate = (event: CustomEvent) => {
@@ -874,6 +884,7 @@ export default function LeadsView({
       const params = new URLSearchParams();
       if (utmFilter !== 'all') params.append('utmSource', utmFilter);
       if (mediumFilter !== 'all') params.append('utmMedium', mediumFilter);
+      if (marketFilter !== 'all') params.append('market', marketFilter);
       if (campaignFilter !== 'all') params.append('utmCampaign', campaignFilter);
       if (planFilter !== 'all') params.append('planName', planFilter);
       if (variant === 'qualified' && qualificationFilter !== 'all') params.append('qualification', qualificationFilter);
@@ -901,7 +912,7 @@ export default function LeadsView({
     } finally {
       setSelectAllLoading(false);
     }
-  }, [token, utmFilter, mediumFilter, campaignFilter, planFilter, qualificationFilter, temperatureFilter, statusFilter, search, fromDate, toDate, bookedFromDate, bookedToDate, minAmount, maxAmount, variant, allSelectedBookingIds, dateRangeOnBookingCreatedAt]);
+  }, [token, utmFilter, mediumFilter, marketFilter, campaignFilter, planFilter, qualificationFilter, temperatureFilter, statusFilter, search, fromDate, toDate, bookedFromDate, bookedToDate, minAmount, maxAmount, variant, allSelectedBookingIds, dateRangeOnBookingCreatedAt]);
 
   const handleSelectRow = useCallback((id: string) => {
     setSelectedRows((prev) => {
@@ -1840,6 +1851,21 @@ export default function LeadsView({
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
+              <label htmlFor="lead-market-filter" className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Market</label>
+              <select
+                id="lead-market-filter"
+                value={marketFilter}
+                onChange={(e) => setMarketFilter(e.target.value)}
+                className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 min-w-[120px] focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+              >
+                <option value="all">All markets</option>
+                <option value="uk">UK</option>
+                <option value="us">US</option>
+                <option value="ca">Canada</option>
+                <option value="none">Not recorded</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">Campaign</label>
               <select
                 value={campaignFilter}
@@ -1945,7 +1971,7 @@ export default function LeadsView({
               </div>
             </div>
             <div className="flex items-center gap-2 ml-auto">
-              {(fromDate || toDate || bookedFromDate || bookedToDate || searchInput || planFilter !== 'all' || (utmFilter !== 'all' && !hideSourceFilter) || mediumFilter !== 'all' || campaignFilter !== 'all' || statusFilter !== 'all' || qualificationFilter !== 'all' || temperatureFilter !== 'all' || minAmount || maxAmount) && (
+              {(fromDate || toDate || bookedFromDate || bookedToDate || searchInput || planFilter !== 'all' || (utmFilter !== 'all' && !hideSourceFilter) || mediumFilter !== 'all' || marketFilter !== 'all' || campaignFilter !== 'all' || statusFilter !== 'all' || qualificationFilter !== 'all' || temperatureFilter !== 'all' || minAmount || maxAmount) && (
                 <button
                   onClick={() => {
                     metaDateFilteredFullRef.current = null;
@@ -1957,6 +1983,7 @@ export default function LeadsView({
                     setPlanFilter('all');
                     setUtmFilter(defaultUtmSource || 'all');
                     setMediumFilter('all');
+                    setMarketFilter('all');
                     setCampaignFilter('all');
                     setStatusFilter('all');
                     setQualificationFilter('all');
@@ -2241,6 +2268,14 @@ export default function LeadsView({
                         ) : (
                           <span className="text-slate-400 text-[9px]">—</span>
                         )}
+                        {row.leadMarket ? (
+                          <span
+                            className={`inline-flex items-center px-1 py-0.5 rounded-full text-[9px] font-semibold truncate max-w-full ${row.leadMarket === 'uk' ? 'bg-indigo-100 text-indigo-700' : row.leadMarket === 'ca' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}
+                            title={`Form page: ${row.landingRoute || '/'}`}
+                          >
+                            {row.leadMarket === 'ca' ? 'CA' : row.leadMarket.toUpperCase()}{row.landingRoute ? ` ${row.landingRoute}` : ''}
+                          </span>
+                        ) : null}
                         {row.medium ? (
                           <span className="text-[8px] text-slate-500 truncate" title={`Medium: ${row.medium}`}>
                             M: {row.medium}
