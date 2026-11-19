@@ -69,7 +69,7 @@ const REGIONS: RegionConfig[] = [
   },
 ];
 
-const MAX_DISCOUNT_PERCENT = 20;
+const BDA_MAX_DISCOUNT_PERCENT = 20;
 
 interface GeneratedLink {
   url: string;
@@ -78,7 +78,8 @@ interface GeneratedLink {
 }
 
 export default function PaymentLinkGeneratorView() {
-  const { token } = useCrmAuth();
+  const { token, user } = useCrmAuth();
+  const isAdmin = !!user?.isAdmin;
   const [selectedRegion, setSelectedRegion] = useState<Region>('us');
   const [selectedPlan, setSelectedPlan] = useState<Plan>('professional');
   const [discountInput, setDiscountInput] = useState('');
@@ -89,7 +90,7 @@ export default function PaymentLinkGeneratorView() {
 
   const region = REGIONS.find((r) => r.id === selectedRegion)!;
   const plan = region.plans.find((p) => p.id === selectedPlan)!;
-  const maxDiscount = Math.floor(plan.originalPrice * MAX_DISCOUNT_PERCENT) / 100;
+  const maxDiscount = isAdmin ? plan.originalPrice - 0.01 : Math.floor(plan.originalPrice * BDA_MAX_DISCOUNT_PERCENT) / 100;
   const discount = parseFloat(discountInput) || 0;
   const finalPrice = plan.originalPrice - discount;
 
@@ -102,7 +103,9 @@ export default function PaymentLinkGeneratorView() {
   const validateDiscount = (): string | null => {
     if (discountInput === '') return 'Please enter a discount amount (0 for no discount).';
     if (discount < 0) return 'Discount cannot be negative.';
-    if (discount > maxDiscount) return `Discount cannot exceed ${MAX_DISCOUNT_PERCENT}% (${region.symbol}${maxDiscount.toFixed(2)}) for the ${plan.name}.`;
+    if (discount > maxDiscount) return isAdmin
+      ? `Discount cannot exceed the original price (${region.symbol}${plan.originalPrice.toFixed(2)}).`
+      : `Discount cannot exceed ${BDA_MAX_DISCOUNT_PERCENT}% (${region.symbol}${maxDiscount.toFixed(2)}) for the ${plan.name}.`;
     if (discount >= plan.originalPrice) return 'Discount exceeds original price.';
     // Prevent more than 2 decimal places
     if (!/^\d+(\.\d{0,2})?$/.test(discountInput)) return `Enter a valid ${region.symbol} amount.`;
@@ -242,7 +245,12 @@ export default function PaymentLinkGeneratorView() {
         {/* Discount Input */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">
-            Discount Amount <span className="text-gray-400 font-normal normal-case">(max {MAX_DISCOUNT_PERCENT}% = {region.symbol}{maxDiscount.toFixed(2)})</span>
+            Discount Amount{' '}
+            <span className="text-gray-400 font-normal normal-case">
+              {isAdmin
+                ? `(max ${region.symbol}${(plan.originalPrice - 0.01).toFixed(2)})`
+                : `(max ${BDA_MAX_DISCOUNT_PERCENT}% = ${region.symbol}${maxDiscount.toFixed(2)})`}
+            </span>
           </h2>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold text-lg">{region.symbol}</span>
@@ -256,8 +264,10 @@ export default function PaymentLinkGeneratorView() {
               onChange={(e) => {
                 // Strip negatives and limit to 2 decimals
                 const val = e.target.value;
-                if (val === '' || (/^\d+(\.\d{0,2})?$/.test(val) && parseFloat(val) <= maxDiscount)) {
-                  setDiscountInput(val);
+                if (val === '' || /^\d+(\.\d{0,2})?$/.test(val)) {
+                  if (isAdmin || parseFloat(val) <= maxDiscount) {
+                    setDiscountInput(val);
+                  }
                 }
               }}
               className="w-full pl-12 pr-4 py-3 text-lg border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
