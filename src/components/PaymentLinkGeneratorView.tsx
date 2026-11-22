@@ -79,7 +79,7 @@ interface GeneratedLink {
 
 export default function PaymentLinkGeneratorView() {
   const { token, user } = useCrmAuth();
-  const isAdmin = !!user?.isAdmin;
+  const isAdmin = !!user?.isAdmin || user?.role === 'admin';
   const [selectedRegion, setSelectedRegion] = useState<Region>('us');
   const [selectedPlan, setSelectedPlan] = useState<Plan>('professional');
   const [discountInput, setDiscountInput] = useState('');
