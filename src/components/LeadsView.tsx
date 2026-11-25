@@ -151,6 +151,8 @@ interface Booking {
   utmMedium?: string;
   utmCampaign?: string;
   paymentPlan?: PaymentPlan;
+  /** The follow-up the BDA scheduled, and the package the lead leans towards. */
+  followUp?: { at?: string | null; plan?: PlanName | null } | null;
   meetingNotes?: string;
   anythingToKnow?: string;
   totalBookings?: number;
@@ -740,6 +742,7 @@ export default function LeadsView({
         notes: booking.anythingToKnow,
         meetingNotes: booking.meetingNotes,
         paymentPlan: booking.paymentPlan,
+        followUp: booking.followUp ?? null,
         bookingId: booking.bookingId,
         totalBookings: booking.totalBookings || 1,
         firefliesTranscriptId: booking.firefliesTranscriptId,
@@ -1362,9 +1365,39 @@ export default function LeadsView({
       throw new Error(data.message || 'Failed to schedule follow-up');
     }
 
+    const scheduledId = selectedBookingForFollowUp.bookingId;
+    setBookings((prev) =>
+      prev.map((b) =>
+        b.bookingId === scheduledId
+          ? { ...b, followUp: { at: followUpData.followUpDateTime, plan: followUpData.plan ?? b.followUp?.plan ?? null } }
+          : b
+      )
+    );
     showToast('Follow-up scheduled successfully!', 'success');
     setIsFollowUpModalOpen(false);
     setSelectedBookingForFollowUp(null);
+  };
+
+  /** Set or clear the package a lead leans towards, from the leads table. */
+  const handleSetFollowUpPlan = async (bookingId: string, plan: PlanName | null) => {
+    const before = bookingsById.get(bookingId)?.followUp ?? null;
+    setBookings((prev) => prev.map((b) => (b.bookingId === bookingId ? { ...b, followUp: { ...b.followUp, plan } } : b)));
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/campaign-bookings/${bookingId}/follow-up-plan`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await safeJsonParse(response);
+      if (!data.success) throw new Error(data.message || 'Failed to save the package');
+      showToast(plan ? `Package set to ${plan}` : 'Package cleared', 'success');
+    } catch (err) {
+      setBookings((prev) => prev.map((b) => (b.bookingId === bookingId ? { ...b, followUp: before } : b)));
+      showToast(err instanceof Error ? err.message : 'Failed to save the package', 'error');
+    }
   };
 
   const handleUpdateAmount = async (bookingId: string, amount: number, planName: PlanName) => {
@@ -2417,6 +2450,24 @@ export default function LeadsView({
                           );
                         })()}
 
+                        {/* Follow-up date and the package the lead leans towards. Shown once a lead is rated or
+                            completed, so a BDA sees both without opening anything. A bought plan has its own cell. */}
+                        {(row.leadTemperature?.value || row.status === 'completed') && row.bookingId ? (
+                          <div className="mt-0.5 flex flex-col gap-0.5">
+                            {row.followUp?.at ? (
+                              <span
+                                className="inline-flex items-center gap-0.5 w-fit text-[9px] text-slate-600"
+                                title={`Follow-up: ${new Date(row.followUp.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`}
+                              >
+                                <Calendar size={8} className="flex-shrink-0" />
+                                {new Date(row.followUp.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] text-slate-400">No follow-up set</span>
+                            )}
+                          </div>
+                        ) : null}
+
                         {openStatusDropdown === row.bookingId && (
                           <div
                             className="fixed inset-0 z-10"
@@ -2473,6 +2524,29 @@ export default function LeadsView({
                             </>
                           )}
                         </div>
+                      ) : (row.leadTemperature?.value || row.status === 'completed') && row.bookingId ? (
+                        // A lead that has not bought yet: the BDA records the package it leans towards. This does not
+                        // create a payment; choosing the plan that is actually bought happens when the lead is marked Paid.
+                        (() => {
+                          const leaning = planOptions.find((p) => p.key === row.followUp?.plan);
+                          return (
+                            <div className="space-y-0.5">
+                              <select
+                                aria-label="Package the lead is interested in"
+                                value={row.followUp?.plan ?? ''}
+                                disabled={!editable}
+                                onChange={(e) => handleSetFollowUpPlan(row.bookingId as string, (e.target.value || null) as PlanName | null)}
+                                className="w-full max-w-[9rem] rounded border border-slate-200 bg-white px-1 py-0.5 text-[9px] font-semibold text-slate-700 disabled:opacity-60"
+                              >
+                                <option value="">Choose package</option>
+                                {planOptions.map((p) => (
+                                  <option key={p.key} value={p.key}>{p.label} ({p.displayPrice})</option>
+                                ))}
+                              </select>
+                              {leaning ? <div className="text-[8px] text-slate-500">Interested, not bought</div> : null}
+                            </div>
+                          );
+                        })()
                       ) : (
                         <span className="text-slate-400 text-[9px]">—</span>
                       )}
@@ -2749,6 +2823,7 @@ export default function LeadsView({
           }}
           onSchedule={handleScheduleFollowUp}
           clientName={selectedBookingForFollowUp.clientName}
+          initialPlan={selectedBookingForFollowUp.followUp?.plan ?? null}
           clientEmail={selectedBookingForFollowUp.clientEmail}
           clientPhone={selectedBookingForFollowUp.clientPhone}
         />
