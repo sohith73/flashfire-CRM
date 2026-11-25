@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Loader2 } from 'lucide-react';
+import { Calendar, Loader2, Package } from 'lucide-react';
+import { usePlanConfig, type PlanName } from '../context/PlanConfigContext';
 
 interface FollowUpModalProps {
     isOpen: boolean;
@@ -8,10 +9,14 @@ interface FollowUpModalProps {
     clientName: string;
     clientEmail: string;
     clientPhone?: string;
+    /** Pre-selects the package when the lead already has one. */
+    initialPlan?: PlanName | null;
 }
 
 export interface FollowUpData {
     followUpDateTime: string; // ISO string
+    /** The package the lead leans towards; omitted when the BDA leaves it undecided. */
+    plan?: PlanName;
 }
 
 /**
@@ -24,8 +29,11 @@ export default function FollowUpModal({
     onClose,
     onSchedule,
     clientName,
+    initialPlan,
 }: FollowUpModalProps) {
+    const { planOptions } = usePlanConfig();
     const [followUpDateTime, setFollowUpDateTime] = useState('');
+    const [plan, setPlan] = useState<PlanName | ''>('');
     const [isScheduling, setIsScheduling] = useState(false);
     const [error, setError] = useState('');
 
@@ -33,6 +41,7 @@ export default function FollowUpModal({
         if (isOpen) {
             // Reset form when modal opens
             setFollowUpDateTime('');
+            setPlan(initialPlan ?? '');
             setError('');
             
             // Set default follow-up time to tomorrow at 10 AM
@@ -44,7 +53,7 @@ export default function FollowUpModal({
                 .slice(0, 16);
             setFollowUpDateTime(localDateTime);
         }
-    }, [isOpen]);
+    }, [isOpen, initialPlan]);
 
     if (!isOpen) return null;
 
@@ -65,6 +74,7 @@ export default function FollowUpModal({
 
             await onSchedule({
                 followUpDateTime: followUpISO,
+                ...(plan ? { plan } : {}),
             });
             onClose();
         } catch (err) {
@@ -106,6 +116,26 @@ export default function FollowUpModal({
                         <p className="text-xs text-slate-500 mt-1">
                             Call will be scheduled 10 min before, WhatsApp 5 min before
                         </p>
+                    </div>
+
+                    {/* Package the lead leans towards. Optional, but it feeds the sales sheet and the leads table. */}
+                    <div>
+                        <label htmlFor="follow-up-package" className="block text-sm font-semibold text-slate-700 mb-2">
+                            <Package size={16} className="inline mr-2" />
+                            Package
+                        </label>
+                        <select
+                            id="follow-up-package"
+                            value={plan}
+                            onChange={(e) => setPlan(e.target.value as PlanName | '')}
+                            disabled={isScheduling}
+                            className="w-full px-4 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        >
+                            <option value="">Not decided yet</option>
+                            {planOptions.map((p) => (
+                                <option key={p.key} value={p.key}>{p.label} ({p.displayPrice})</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* Info Box */}
