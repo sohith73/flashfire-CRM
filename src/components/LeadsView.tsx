@@ -2465,20 +2465,6 @@ export default function LeadsView({
                             ) : (
                               <span className="text-[9px] text-slate-400">No follow-up set</span>
                             )}
-                            {!row.paymentPlan ? (
-                              <select
-                                aria-label="Package the lead leans towards"
-                                value={row.followUp?.plan ?? ''}
-                                disabled={!editable}
-                                onChange={(e) => handleSetFollowUpPlan(row.bookingId as string, (e.target.value || null) as PlanName | null)}
-                                className="w-fit max-w-full rounded border border-slate-200 bg-white px-0.5 py-0 text-[9px] font-semibold text-slate-700 disabled:opacity-60"
-                              >
-                                <option value="">Package: none</option>
-                                {planOptions.map((p) => (
-                                  <option key={p.key} value={p.key}>{p.label}</option>
-                                ))}
-                              </select>
-                            ) : null}
                           </div>
                         ) : null}
 
@@ -2538,6 +2524,29 @@ export default function LeadsView({
                             </>
                           )}
                         </div>
+                      ) : (row.leadTemperature?.value || row.status === 'completed') && row.bookingId ? (
+                        // A lead that has not bought yet: the BDA records the package it leans towards. This does not
+                        // create a payment; choosing the plan that is actually bought happens when the lead is marked Paid.
+                        (() => {
+                          const leaning = planOptions.find((p) => p.key === row.followUp?.plan);
+                          return (
+                            <div className="space-y-0.5">
+                              <select
+                                aria-label="Package the lead is interested in"
+                                value={row.followUp?.plan ?? ''}
+                                disabled={!editable}
+                                onChange={(e) => handleSetFollowUpPlan(row.bookingId as string, (e.target.value || null) as PlanName | null)}
+                                className="w-full max-w-[9rem] rounded border border-slate-200 bg-white px-1 py-0.5 text-[9px] font-semibold text-slate-700 disabled:opacity-60"
+                              >
+                                <option value="">Choose package</option>
+                                {planOptions.map((p) => (
+                                  <option key={p.key} value={p.key}>{p.label} ({p.displayPrice})</option>
+                                ))}
+                              </select>
+                              {leaning ? <div className="text-[8px] text-slate-500">Interested, not bought</div> : null}
+                            </div>
+                          );
+                        })()
                       ) : (
                         <span className="text-slate-400 text-[9px]">—</span>
                       )}
