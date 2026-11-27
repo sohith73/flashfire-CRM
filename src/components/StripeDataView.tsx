@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, RefreshCcw, ChevronLeft, ChevronRight, Lock, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Loader2, RefreshCcw, ChevronLeft, ChevronRight, Lock, Plus, Pencil, Trash2, X, Zap, Users, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCrmAuth } from '../auth/CrmAuthContext';
 
 const STRIPE_DATA_PASSWORD = 'flashfire@1122334455';
@@ -23,6 +23,25 @@ interface StripeMonthPayload {
   rows: StripeRow[];
   totalsByCurrency: Record<string, number>;
   count: number;
+}
+
+interface SourceClient {
+  email: string;
+  name: string;
+  planName: string;
+  date: string;
+  amount: number;
+  currency: string;
+  detail: string;
+}
+
+interface SourceBreakdown {
+  month: string;
+  total: number;
+  counts: { meta: number; referral: number; direct: number };
+  meta: SourceClient[];
+  referral: SourceClient[];
+  direct: SourceClient[];
 }
 
 interface ManualRow {
@@ -292,6 +311,10 @@ export default function StripeDataView() {
   const [editingRow, setEditingRow] = useState<ManualRow | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [sourceData, setSourceData] = useState<SourceBreakdown | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceExpanded, setSourceExpanded] = useState<'meta' | 'referral' | 'direct' | null>(null);
+
   const authHeaders = useCallback((): HeadersInit => {
     const headers: HeadersInit = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -327,7 +350,24 @@ export default function StripeDataView() {
     }
   }, [token, month]);
 
+  const fetchSourceBreakdown = useCallback(async () => {
+    try {
+      setSourceLoading(true);
+      const headers: HeadersInit = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE_URL}/api/crm/stripe/source-breakdown?month=${month}`, { headers });
+      const json = await res.json();
+      if (res.ok && json.success) setSourceData(json.data as SourceBreakdown);
+      else setSourceData(null);
+    } catch {
+      setSourceData(null);
+    } finally {
+      setSourceLoading(false);
+    }
+  }, [token, month]);
+
   useEffect(() => { if (unlocked) fetchData(); }, [fetchData, unlocked]);
+  useEffect(() => { if (unlocked) fetchSourceBreakdown(); }, [fetchSourceBreakdown, unlocked]);
 
   const combinedRows: CombinedRow[] = useMemo(() => {
     const stripeCombined: CombinedRow[] = (data?.rows || []).map((r) => ({
@@ -602,6 +642,78 @@ export default function StripeDataView() {
               </div>
             </div>
           )}
+
+          {/* Source Breakdown */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Source Breakdown</p>
+            {sourceLoading && (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                <Loader2 size={12} className="animate-spin" /> Loading source data…
+              </div>
+            )}
+            {!sourceLoading && sourceData && (
+              <div className="space-y-2">
+                {/* Summary pills */}
+                <div className="flex flex-wrap gap-3 mb-1">
+                  {[
+                    { key: 'meta' as const, label: 'Meta', icon: Zap, color: 'text-indigo-600', bg: 'bg-indigo-50 border-indigo-200', count: sourceData.counts.meta },
+                    { key: 'referral' as const, label: 'Referral', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200', count: sourceData.counts.referral },
+                    { key: 'direct' as const, label: 'Direct', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-200', count: sourceData.counts.direct },
+                  ].map(({ key, label, icon: Icon, color, bg, count }) => (
+                    <button
+                      key={key}
+                      onClick={() => setSourceExpanded(sourceExpanded === key ? null : key)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${bg} ${color} hover:opacity-80`}
+                    >
+                      <Icon size={14} />
+                      {label} — {count}
+                      {sourceExpanded === key ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Expanded client list */}
+                {sourceExpanded && (
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      {sourceExpanded === 'meta' && `Meta Clients (${sourceData.counts.meta}) — came via paid Meta/Instagram ads`}
+                      {sourceExpanded === 'referral' && `Referral Clients (${sourceData.counts.referral}) — referred by another client`}
+                      {sourceExpanded === 'direct' && `Direct Clients (${sourceData.counts.direct}) — organic / website`}
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 border-b border-slate-100">
+                        <tr>
+                          <th className="text-left px-4 py-2.5 font-semibold text-slate-500 text-xs">Date</th>
+                          <th className="text-left px-4 py-2.5 font-semibold text-slate-500 text-xs">Name</th>
+                          <th className="text-left px-4 py-2.5 font-semibold text-slate-500 text-xs">Email</th>
+                          <th className="text-left px-4 py-2.5 font-semibold text-slate-500 text-xs">Plan</th>
+                          <th className="text-left px-4 py-2.5 font-semibold text-slate-500 text-xs">
+                            {sourceExpanded === 'meta' ? 'Campaign' : sourceExpanded === 'referral' ? 'Referred By' : 'UTM Source'}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sourceData[sourceExpanded].map((c, i) => (
+                          <tr key={`${c.email}-${i}`} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                            <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap text-xs">
+                              {new Date(c.date).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                            </td>
+                            <td className="px-4 py-2.5 font-medium text-slate-800">{c.name || '—'}</td>
+                            <td className="px-4 py-2.5 text-slate-400 text-xs">{c.email}</td>
+                            <td className="px-4 py-2.5 text-slate-600 text-xs">{c.planName || '—'}</td>
+                            <td className="px-4 py-2.5 text-slate-500 text-xs max-w-[200px] truncate">{c.detail}</td>
+                          </tr>
+                        ))}
+                        {sourceData[sourceExpanded].length === 0 && (
+                          <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">None this month</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <table className="w-full text-sm">
